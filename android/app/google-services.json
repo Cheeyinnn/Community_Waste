@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "12620033295",
+    "project_id": "community-waste",
+    "storage_bucket": "community-waste.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:12620033295:android:055304c404e522d2e9a27a",
+        "android_client_info": {
+          "package_name": "com.example.community_waste_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCm59dfOa7DmB1AVvXPg7ZrQEKdd2v7DSI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
