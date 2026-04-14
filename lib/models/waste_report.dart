@@ -10,6 +10,7 @@ class WasteReport {
   final String wasteType;
   final String imageUrl;
   final String status;
+  final String priority;
   final String collectorId;
   final String collectorName;
   final String adminRemark;
@@ -30,6 +31,7 @@ class WasteReport {
     required this.wasteType,
     required this.imageUrl,
     required this.status,
+    required this.priority,
     required this.collectorId,
     required this.collectorName,
     required this.adminRemark,
@@ -42,25 +44,33 @@ class WasteReport {
   });
 
   factory WasteReport.fromMap(Map<String, dynamic> map, String docId) {
+    final dynamic rawLatitude = map['latitude'];
+    final dynamic rawLongitude = map['longitude'];
+    final dynamic rawCreatedAt = map['createdAt'];
+    final dynamic rawUpdatedAt = map['updatedAt'];
+
     return WasteReport(
       id: docId,
-      userId: map['userId'] ?? '',
-      userName: map['userName'] ?? '',
-      title: map['title'] ?? '',
-      description: map['description'] ?? '',
-      location: map['location'] ?? '',
-      wasteType: map['wasteType'] ?? '',
-      imageUrl: map['imageUrl'] ?? '',
-      status: map['status'] ?? 'Pending',
-      collectorId: map['collectorId'] ?? '',
-      collectorName: map['collectorName'] ?? '',
-      adminRemark: map['adminRemark'] ?? '',
-      collectorRemark: map['collectorRemark'] ?? '',
-      completionImageUrl: map['completionImageUrl'] ?? '',
-      latitude: (map['latitude'] ?? 0.0).toDouble(),
-      longitude: (map['longitude'] ?? 0.0).toDouble(),
-      createdAt: map['createdAt'] ?? Timestamp.now(),
-      updatedAt: map['updatedAt'] ?? map['createdAt'] ?? Timestamp.now(),
+      userId: (map['userId'] ?? '').toString(),
+      userName: (map['userName'] ?? '').toString(),
+      title: (map['title'] ?? '').toString(),
+      description: (map['description'] ?? '').toString(),
+      location: (map['location'] ?? '').toString(),
+      wasteType: (map['wasteType'] ?? '').toString(),
+      imageUrl: (map['imageUrl'] ?? '').toString(),
+      status: (map['status'] ?? 'Pending').toString(),
+      priority: (map['priority'] ?? 'Medium').toString(),
+      collectorId: (map['collectorId'] ?? '').toString(),
+      collectorName: (map['collectorName'] ?? '').toString(),
+      adminRemark: (map['adminRemark'] ?? '').toString(),
+      collectorRemark: (map['collectorRemark'] ?? '').toString(),
+      completionImageUrl: (map['completionImageUrl'] ?? '').toString(),
+      latitude: rawLatitude is num ? rawLatitude.toDouble() : 0.0,
+      longitude: rawLongitude is num ? rawLongitude.toDouble() : 0.0,
+      createdAt: rawCreatedAt is Timestamp ? rawCreatedAt : Timestamp.now(),
+      updatedAt: rawUpdatedAt is Timestamp
+          ? rawUpdatedAt
+          : (rawCreatedAt is Timestamp ? rawCreatedAt : Timestamp.now()),
     );
   }
 
@@ -74,6 +84,7 @@ class WasteReport {
       'wasteType': wasteType,
       'imageUrl': imageUrl,
       'status': status,
+      'priority': priority,
       'collectorId': collectorId,
       'collectorName': collectorName,
       'adminRemark': adminRemark,
@@ -84,5 +95,49 @@ class WasteReport {
       'createdAt': createdAt,
       'updatedAt': updatedAt,
     };
+  }
+
+  WasteReport copyWith({
+    String? id,
+    String? userId,
+    String? userName,
+    String? title,
+    String? description,
+    String? location,
+    String? wasteType,
+    String? imageUrl,
+    String? status,
+    String? priority,
+    String? collectorId,
+    String? collectorName,
+    String? adminRemark,
+    String? collectorRemark,
+    String? completionImageUrl,
+    double? latitude,
+    double? longitude,
+    Timestamp? createdAt,
+    Timestamp? updatedAt,
+  }) {
+    return WasteReport(
+      id: id ?? this.id,
+      userId: userId ?? this.userId,
+      userName: userName ?? this.userName,
+      title: title ?? this.title,
+      description: description ?? this.description,
+      location: location ?? this.location,
+      wasteType: wasteType ?? this.wasteType,
+      imageUrl: imageUrl ?? this.imageUrl,
+      status: status ?? this.status,
+      priority: priority ?? this.priority,
+      collectorId: collectorId ?? this.collectorId,
+      collectorName: collectorName ?? this.collectorName,
+      adminRemark: adminRemark ?? this.adminRemark,
+      collectorRemark: collectorRemark ?? this.collectorRemark,
+      completionImageUrl: completionImageUrl ?? this.completionImageUrl,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
   }
 }

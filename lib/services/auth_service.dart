@@ -17,23 +17,25 @@ class AuthService {
   }) async {
     try {
       final credential = await _auth.createUserWithEmailAndPassword(
-        email: email,
-        password: password,
+        email: email.trim(),
+        password: password.trim(),
       );
 
       final user = credential.user;
 
       if (user != null) {
-        await user.updateDisplayName(name);
+        await user.updateDisplayName(name.trim());
 
         final appUser = AppUser(
           uid: user.uid,
-          name: name,
-          email: email,
+          name: name.trim(),
+          email: email.trim(),
           role: 'user',
         );
 
-        await _firestore.collection('users').doc(user.uid).set(appUser.toMap());
+        await _firestore.collection('users').doc(user.uid).set(
+              appUser.toMap(),
+            );
       }
 
       return credential;
@@ -50,8 +52,8 @@ class AuthService {
   }) async {
     try {
       return await _auth.signInWithEmailAndPassword(
-        email: email,
-        password: password,
+        email: email.trim(),
+        password: password.trim(),
       );
     } on FirebaseAuthException catch (e) {
       throw Exception(_getAuthErrorMessage(e));
@@ -65,23 +67,27 @@ class AuthService {
   }
 
   Future<String> getUserRole(String uid) async {
-    try {
-      final doc = await _firestore.collection('users').doc(uid).get();
+  try {
+    final doc = await _firestore.collection('users').doc(uid).get();
 
-      if (!doc.exists) {
-        return 'user';
-      }
+    print('Doc exists: ${doc.exists}');
+    print('Doc data: ${doc.data()}');
 
-      final data = doc.data();
-      if (data == null) {
-        return 'user';
-      }
-
-      return data['role'] ?? 'user';
-    } catch (e) {
-      throw Exception('Failed to get user role: $e');
+    if (!doc.exists || doc.data() == null) {
+      return 'user';
     }
+
+    final role = doc.data()!['role'];
+    if (role == null) {
+      return 'user';
+    }
+
+    return role.toString().trim().toLowerCase();
+  } catch (e) {
+    print('Role read error: $e');
+    return 'user';
   }
+}
 
   Future<AppUser?> getCurrentAppUser() async {
     try {
@@ -95,6 +101,45 @@ class AuthService {
       return AppUser.fromMap(doc.data()!, doc.id);
     } catch (e) {
       throw Exception('Failed to get current user data: $e');
+    }
+  }
+
+  Future<void> createAdminOrCollectorAccount({
+    required String name,
+    required String email,
+    required String password,
+    required String role,
+  }) async {
+    try {
+      if (role != 'admin' && role != 'collector') {
+        throw Exception('Role must be admin or collector');
+      }
+
+      final credential = await _auth.createUserWithEmailAndPassword(
+        email: email.trim(),
+        password: password.trim(),
+      );
+
+      final user = credential.user;
+
+      if (user != null) {
+        await user.updateDisplayName(name.trim());
+
+        final appUser = AppUser(
+          uid: user.uid,
+          name: name.trim(),
+          email: email.trim(),
+          role: role,
+        );
+
+        await _firestore.collection('users').doc(user.uid).set(
+              appUser.toMap(),
+            );
+      }
+    } on FirebaseAuthException catch (e) {
+      throw Exception(_getAuthErrorMessage(e));
+    } catch (e) {
+      throw Exception('Failed to create $role account: $e');
     }
   }
 
@@ -112,6 +157,10 @@ class AuthService {
         return 'Incorrect password.';
       case 'invalid-credential':
         return 'Invalid email or password.';
+      case 'too-many-requests':
+        return 'Too many attempts. Please try again later.';
+      case 'network-request-failed':
+        return 'Network error. Please check your internet connection.';
       default:
         return e.message ?? 'Authentication error occurred.';
     }

@@ -4,7 +4,7 @@ import 'firebase_options.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/user/user_main.dart';
 import 'services/auth_service.dart';
-import 'screens/admin/admin_dashboard_screen.dart';
+import 'screens/admin/admin_main_screen.dart';
 import 'screens/collector/collector_main_screen.dart';
 
 void main() async {
@@ -69,7 +69,7 @@ class MyApp extends StatelessWidget {
 
               switch (role) {
                 case 'admin':
-                  return const AdminDashboardScreen();
+                  return const AdminMainScreen();
                 case 'collector':
                   return const CollectorMainScreen();
                 default:

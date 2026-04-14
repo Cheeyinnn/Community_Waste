@@ -1,320 +1,554 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../models/waste_report.dart';
 import '../../services/auth_service.dart';
-import 'report_list_screen.dart';
+import '../../services/firestore_service.dart';
+import 'notification_page.dart';
 
-class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key});
+class HomeScreen extends StatefulWidget {
+  final Function(String? statusFilter) onNavigateToReports;
+  final VoidCallback onCreateReport;
+
+  const HomeScreen({
+    super.key,
+    required this.onNavigateToReports,
+    required this.onCreateReport,
+  });
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  final AuthService authService = AuthService();
+  final FirestoreService firestoreService = FirestoreService();
+
+  Future<DateTime?> _getLastNotificationReadTime(String userId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final value = prefs.getString('last_notification_read_$userId');
+
+    if (value == null) return null;
+    return DateTime.tryParse(value);
+  }
+
+  Future<void> _openNotificationPage() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const NotificationPage(),
+      ),
+    );
+
+    if (mounted) {
+      setState(() {});
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final AuthService authService = AuthService();
     final user = FirebaseAuth.instance.currentUser;
-    final String userName = user?.email?.split('@').first ?? 'User';
+
+    final String userName = user?.displayName?.trim().isNotEmpty == true
+        ? user!.displayName!
+        : user?.email?.split('@').first ?? 'User';
+
+    final String userId = user?.uid ?? '';
+
+    if (userId.isEmpty) {
+      return const Scaffold(
+        body: Center(
+          child: Text('User not found'),
+        ),
+      );
+    }
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Community Waste App'),
-        centerTitle: true,
-        actions: [
-          IconButton(
-            onPressed: () async {
-              await authService.logout();
-            },
-            icon: const Icon(Icons.logout),
-          ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      backgroundColor: const Color(0xFFEFF8F6),
+      body: SafeArea(
+        child: Stack(
           children: [
-            const SizedBox(height: 8),
-
-            Text(
-              'Hello, $userName',
-              style: const TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
+            Positioned(
+              top: -70,
+              left: -70,
+              child: Container(
+                width: 190,
+                height: 190,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.blue.withOpacity(0.10),
+                ),
               ),
             ),
-
-            const SizedBox(height: 8),
-
-            Text(
-              'Help keep your community clean by reporting waste issues and tracking cleanup progress.',
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.grey.shade700,
+            Positioned(
+              bottom: -90,
+              right: -60,
+              child: Container(
+                width: 230,
+                height: 230,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.green.withOpacity(0.10),
+                ),
               ),
             ),
-
-            const SizedBox(height: 24),
-
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(18),
-              decoration: BoxDecoration(
-                color: Colors.green.shade50,
-                borderRadius: BorderRadius.circular(18),
-              ),
-              child: Row(
+            SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: Colors.green.shade100,
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: const Icon(
-                      Icons.eco,
-                      color: Colors.green,
-                      size: 28,
+                  _buildTopBar(
+                    userId: userId,
+                    onLogout: () async {
+                      await authService.logout();
+                    },
+                  ),
+                  const SizedBox(height: 24),
+                  _buildHeroCard(
+                    userName,
+                    onTap: widget.onCreateReport,
+                  ),
+                  const SizedBox(height: 28),
+                  const Text(
+                    'Overview',
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.black87,
                     ),
                   ),
-                  const SizedBox(width: 14),
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Community Waste Dashboard',
-                          style: TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.bold,
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildLiveStatCard(
+                          stream: firestoreService.getUserReportCount(userId),
+                          icon: Icons.assignment_outlined,
+                          iconBg: const Color(0xFFEAF3FF),
+                          iconColor: Colors.blue,
+                          title: 'My Reports',
+                          onTap: () {
+                            widget.onNavigateToReports(null);
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _buildLiveStatCard(
+                          stream: firestoreService.getUserReportCountByStatus(
+                            userId,
+                            'Pending',
                           ),
+                          icon: Icons.pending_actions_outlined,
+                          iconBg: const Color(0xFFFFF3E3),
+                          iconColor: Colors.orange,
+                          title: 'Pending',
+                          onTap: () {
+                            widget.onNavigateToReports('Pending');
+                          },
                         ),
-                        SizedBox(height: 4),
-                        Text(
-                          'View your waste reporting activity and stay updated with community cleanup efforts.',
-                          style: TextStyle(fontSize: 13),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildLiveStatCard(
+                          stream: firestoreService.getUserReportCountByStatus(
+                            userId,
+                            'Resolved',
+                          ),
+                          icon: Icons.check_circle_outline,
+                          iconBg: const Color(0xFFE8F8EE),
+                          iconColor: Colors.green,
+                          title: 'Resolved',
+                          onTap: () {
+                            widget.onNavigateToReports('Resolved');
+                          },
                         ),
-                      ],
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _buildLiveStatCard(
+                          stream: firestoreService.getUserReportCountByStatus(
+                            userId,
+                            'Assigned',
+                          ),
+                          icon: Icons.local_shipping_outlined,
+                          iconBg: const Color(0xFFFFEBEB),
+                          iconColor: Colors.deepPurple,
+                          title: 'Assigned',
+                          onTap: () {
+                            widget.onNavigateToReports('Assigned');
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 28),
+                  const Text(
+                    'Recent Activity',
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.black87,
                     ),
+                  ),
+                  const SizedBox(height: 14),
+                  StreamBuilder<List<WasteReport>>(
+                    stream: firestoreService.getRecentUserActivities(userId),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: const Center(
+                            child: CircularProgressIndicator(),
+                          ),
+                        );
+                      }
+
+                      if (snapshot.hasError) {
+                        return _buildEmptyActivityCard(
+                          text: 'Failed to load recent activity.',
+                        );
+                      }
+
+                      final reports = snapshot.data ?? [];
+
+                      if (reports.isEmpty) {
+                        return _buildEmptyActivityCard(
+                          text: 'No recent activity yet.',
+                        );
+                      }
+
+                      return Column(
+                        children: reports.map((report) {
+                          final activity = _buildActivityData(report);
+
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: _buildActivityTile(
+                              icon: activity['icon'] as IconData,
+                              color: activity['color'] as Color,
+                              title: activity['title'] as String,
+                              subtitle: activity['subtitle'] as String,
+                            ),
+                          );
+                        }).toList(),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 28),
+                  const Text(
+                    'Latest Reports',
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  StreamBuilder<List<WasteReport>>(
+                    stream: firestoreService.getRecentUserReports(userId),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: const Center(
+                            child: CircularProgressIndicator(),
+                          ),
+                        );
+                      }
+
+                      if (snapshot.hasError) {
+                        return _buildEmptyActivityCard(
+                          text: 'Failed to load latest reports.',
+                        );
+                      }
+
+                      final reports = snapshot.data ?? [];
+
+                      if (reports.isEmpty) {
+                        return _buildEmptyActivityCard(
+                          text: 'No reports submitted yet.',
+                        );
+                      }
+
+                      return Column(
+                        children: reports.map((report) {
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: _buildReportTile(report),
+                          );
+                        }).toList(),
+                      );
+                    },
                   ),
                 ],
               ),
             ),
-
-            const SizedBox(height: 28),
-
-            const Text(
-              'Overview',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-
-            const SizedBox(height: 16),
-
-            Row(
-              children: [
-                Expanded(
-                  child: _buildStatCard(
-                    icon: Icons.assignment_outlined,
-                    iconColor: Colors.blue,
-                    title: 'My Reports',
-                    value: '12',
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildStatCard(
-                    icon: Icons.pending_actions_outlined,
-                    iconColor: Colors.orange,
-                    title: 'Pending',
-                    value: '4',
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 12),
-
-            Row(
-              children: [
-                Expanded(
-                  child: _buildStatCard(
-                    icon: Icons.check_circle_outline,
-                    iconColor: Colors.green,
-                    title: 'Resolved',
-                    value: '6',
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildStatCard(
-                    icon: Icons.location_on_outlined,
-                    iconColor: Colors.red,
-                    title: 'Nearby Cases',
-                    value: '8',
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 28),
-
-            const Text(
-              'Quick Access',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-
-            const SizedBox(height: 16),
-
-            Card(
-              elevation: 3,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: ListTile(
-                contentPadding: const EdgeInsets.all(16),
-                leading: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.shade100,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(
-                    Icons.list_alt,
-                    color: Colors.blue,
-                  ),
-                ),
-                title: const Text(
-                  'My Reports',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                subtitle: const Text('View your submitted reports and status'),
-                trailing: const Icon(Icons.arrow_forward_ios, size: 18),
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => ReportListScreen(),
-                    ),
-                  );
-                },
-              ),
-            ),
-
-            const SizedBox(height: 16),
-
-            Card(
-              elevation: 3,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: ListTile(
-                contentPadding: const EdgeInsets.all(16),
-                leading: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.orange.shade100,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(
-                    Icons.tips_and_updates_outlined,
-                    color: Colors.orange,
-                  ),
-                ),
-                title: const Text(
-                  'Waste Management Tips',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                subtitle: const Text('Learn how to keep your area cleaner'),
-                trailing: const Icon(Icons.arrow_forward_ios, size: 18),
-                onTap: () {
-                  _showTipsDialog(context);
-                },
-              ),
-            ),
-
-            const SizedBox(height: 28),
-
-            const Text(
-              'Recent Activity',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-
-            const SizedBox(height: 16),
-
-            _buildActivityTile(
-              icon: Icons.report_gmailerrorred,
-              color: Colors.orange,
-              title: 'Report submitted successfully',
-              subtitle: 'Your latest waste report is under review.',
-            ),
-
-            const SizedBox(height: 10),
-
-            _buildActivityTile(
-              icon: Icons.local_shipping_outlined,
-              color: Colors.deepPurple,
-              title: 'Collector assigned',
-              subtitle: 'A collector has been assigned to one of your reports.',
-            ),
-
-            const SizedBox(height: 10),
-
-            _buildActivityTile(
-              icon: Icons.check_circle_outline,
-              color: Colors.green,
-              title: 'Issue resolved',
-              subtitle: 'One reported location has been marked as resolved.',
-            ),
-
-            const SizedBox(height: 20),
           ],
         ),
       ),
     );
   }
 
-  static Widget _buildStatCard({
-    required IconData icon,
-    required Color iconColor,
-    required String title,
-    required String value,
+  Widget _buildTopBar({
+    required String userId,
+    required VoidCallback onLogout,
   }) {
+    return Row(
+      children: [
+        Container(
+          width: 52,
+          height: 52,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.06),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: const Icon(
+            Icons.eco_rounded,
+            color: Color(0xFF35C76F),
+            size: 28,
+          ),
+        ),
+        const Spacer(),
+        StreamBuilder<List<WasteReport>>(
+          stream: firestoreService.getUserReports(userId),
+          builder: (context, snapshot) {
+            final reports = snapshot.data ?? [];
+
+            return FutureBuilder<DateTime?>(
+              future: _getLastNotificationReadTime(userId),
+              builder: (context, readSnapshot) {
+                final lastRead = readSnapshot.data;
+
+                final unreadCount = reports.where((report) {
+                  if (report.status == 'Pending') return false;
+
+                  final updatedAt = report.updatedAt.toDate();
+
+                  if (lastRead == null) {
+                    return true;
+                  }
+
+                  return updatedAt.isAfter(lastRead);
+                }).length;
+
+                return Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Container(
+                      width: 52,
+                      height: 52,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.06),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: IconButton(
+                        onPressed: _openNotificationPage,
+                        icon: const Icon(Icons.notifications_none_rounded),
+                        color: Colors.black87,
+                        tooltip: 'Notifications',
+                      ),
+                    ),
+                    if (unreadCount > 0)
+                      Positioned(
+                        right: -2,
+                        top: -2,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          constraints: const BoxConstraints(
+                            minWidth: 20,
+                            minHeight: 20,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: Colors.white,
+                              width: 2,
+                            ),
+                          ),
+                          child: Text(
+                            unreadCount > 99 ? '99+' : unreadCount.toString(),
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+              },
+            );
+          },
+        ),
+        const SizedBox(width: 10),
+        Container(
+          width: 52,
+          height: 52,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.06),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: IconButton(
+            onPressed: onLogout,
+            icon: const Icon(Icons.logout_rounded),
+            color: Colors.black87,
+            tooltip: 'Logout',
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHeroCard(String userName, {required VoidCallback onTap}) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      width: double.infinity,
+      padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(28),
+        gradient: const LinearGradient(
+          colors: [
+            Color(0xFF43B9FF),
+            Color(0xFF35C76F),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.12),
-            blurRadius: 8,
-            offset: const Offset(0, 3),
+            color: Colors.black.withOpacity(0.10),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
-      child: Column(
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: iconColor, size: 28),
-          const SizedBox(height: 12),
-          Text(
-            title,
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey.shade700,
+          Container(
+            width: 62,
+            height: 62,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.22),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.person_rounded,
+              color: Colors.white,
+              size: 34,
             ),
           ),
-          const SizedBox(height: 6),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Hello,',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  userName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'Help keep your community clean by reporting waste issues and tracking cleanup progress.',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                GestureDetector(
+                  onTap: onTap,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.18),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: Colors.white.withOpacity(0.22),
+                      ),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.camera_alt_outlined,
+                          color: Colors.white,
+                          size: 18,
+                        ),
+                        SizedBox(width: 8),
+                        Text(
+                          'Report waste now',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -322,38 +556,134 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  static Widget _buildActivityTile({
+  Widget _buildLiveStatCard({
+    required Stream<int> stream,
+    required IconData icon,
+    required Color iconBg,
+    required Color iconColor,
+    required String title,
+    VoidCallback? onTap,
+  }) {
+    return StreamBuilder<int>(
+      stream: stream,
+      builder: (context, snapshot) {
+        final value = snapshot.data ?? 0;
+
+        return _buildStatCard(
+          icon: icon,
+          iconBg: iconBg,
+          iconColor: iconColor,
+          title: title,
+          value: value.toString(),
+          onTap: onTap,
+        );
+      },
+    );
+  }
+
+  Widget _buildStatCard({
+    required IconData icon,
+    required Color iconBg,
+    required Color iconColor,
+    required String title,
+    required String value,
+    VoidCallback? onTap,
+  }) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(22),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(22),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(22),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.06),
+                blurRadius: 14,
+                offset: const Offset(0, 5),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: iconBg,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(icon, color: iconColor, size: 24),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey.shade700,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.black87,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActivityTile({
     required IconData icon,
     required Color color,
     required String title,
     required String subtitle,
   }) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(15),
       decoration: BoxDecoration(
-        color: Colors.grey.shade50,
-        borderRadius: BorderRadius.circular(14),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(color: Colors.grey.shade200),
       ),
       child: Row(
         children: [
           CircleAvatar(
+            radius: 24,
             backgroundColor: color.withOpacity(0.12),
             child: Icon(icon, color: color),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 13),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   title,
-                  style: const TextStyle(fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                  ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   subtitle,
-                  style: TextStyle(color: Colors.grey.shade700),
+                  style: TextStyle(
+                    color: Colors.grey.shade700,
+                    fontSize: 13,
+                  ),
                 ),
               ],
             ),
@@ -363,31 +693,165 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  static void _showTipsDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Waste Management Tips'),
-        content: const Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('• Separate recyclable and non-recyclable waste.'),
-            SizedBox(height: 8),
-            Text('• Dispose of bulky waste at the proper location.'),
-            SizedBox(height: 8),
-            Text('• Report illegal dumping as soon as possible.'),
-            SizedBox(height: 8),
-            Text('• Help keep public areas clean and safe.'),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
+  Widget _buildReportTile(WasteReport report) {
+    final Color statusColor = _getStatusColor(report.status);
+
+    return Container(
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 24,
+            backgroundColor: statusColor.withOpacity(0.12),
+            child: Icon(
+              Icons.description_outlined,
+              color: statusColor,
+            ),
+          ),
+          const SizedBox(width: 13),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  report.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  report.location,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.grey.shade700,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 10,
+              vertical: 6,
+            ),
+            decoration: BoxDecoration(
+              color: statusColor.withOpacity(0.10),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              report.status,
+              style: TextStyle(
+                color: statusColor,
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+              ),
+            ),
           ),
         ],
       ),
     );
+  }
+
+  Widget _buildEmptyActivityCard({required String text}) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: Colors.grey.shade700,
+          fontSize: 14,
+        ),
+      ),
+    );
+  }
+
+  Map<String, dynamic> _buildActivityData(WasteReport report) {
+    final String title = report.title;
+    final String collectorName = report.collectorName;
+    final String adminRemark = report.adminRemark;
+
+    switch (report.status) {
+      case 'Pending':
+        return {
+          'icon': Icons.report_gmailerrorred,
+          'color': Colors.orange,
+          'title': 'Report submitted successfully',
+          'subtitle': 'Your report "$title" is under review.',
+        };
+      case 'Assigned':
+        return {
+          'icon': Icons.local_shipping_outlined,
+          'color': Colors.deepPurple,
+          'title': 'Collector assigned',
+          'subtitle': collectorName.isNotEmpty
+              ? 'Collector $collectorName has been assigned to "$title".'
+              : 'A collector has been assigned to "$title".',
+        };
+      case 'In Progress':
+        return {
+          'icon': Icons.autorenew_rounded,
+          'color': Colors.blue,
+          'title': 'Cleanup in progress',
+          'subtitle': 'Your report "$title" is currently being handled.',
+        };
+      case 'Resolved':
+        return {
+          'icon': Icons.check_circle_outline,
+          'color': Colors.green,
+          'title': 'Issue resolved',
+          'subtitle': 'Your report "$title" has been marked as resolved.',
+        };
+      case 'Rejected':
+        return {
+          'icon': Icons.cancel_outlined,
+          'color': Colors.red,
+          'title': 'Report rejected',
+          'subtitle': adminRemark.isNotEmpty
+              ? 'Reason: $adminRemark'
+              : 'Your report "$title" was rejected.',
+        };
+      default:
+        return {
+          'icon': Icons.info_outline,
+          'color': Colors.grey,
+          'title': 'Report updated',
+          'subtitle': 'Your report "$title" has new updates.',
+        };
+    }
+  }
+
+  Color _getStatusColor(String status) {
+    switch (status) {
+      case 'Pending':
+        return Colors.orange;
+      case 'Assigned':
+        return Colors.deepPurple;
+      case 'In Progress':
+        return Colors.blue;
+      case 'Resolved':
+        return Colors.green;
+      case 'Rejected':
+        return Colors.red;
+      default:
+        return Colors.grey;
+    }
   }
 }
