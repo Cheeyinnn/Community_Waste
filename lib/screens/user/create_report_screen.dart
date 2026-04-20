@@ -1,10 +1,13 @@
+import 'dart:convert';
 import 'dart:io';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:google_places_flutter/google_places_flutter.dart';
 
 import '../../models/waste_report.dart';
 import '../../services/firestore_service.dart';
@@ -27,14 +30,17 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
   final FirestoreService _firestoreService = FirestoreService();
   final StorageService _storageService = StorageService();
 
+  static const String _googleApiKey =
+      'AIzaSyBHoNEbIfc0lqJ74D70b26P8_vxL5DSw9s';
+
   File? _imageFile;
   String _wasteType = 'General Waste';
-  String _priority = 'Medium';
   bool _isLoading = false;
 
   double _latitude = 0.0;
   double _longitude = 0.0;
   bool _isGettingLocation = false;
+  String _detectedArea = '';
 
   final List<String> _wasteTypes = [
     'General Waste',
@@ -42,12 +48,6 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     'Illegal Dumping',
     'Bulky Waste',
     'Hazardous Waste',
-  ];
-
-  final List<String> _priorityOptions = [
-    'High',
-    'Medium',
-    'Low',
   ];
 
   bool _hasUnsavedChanges() {
@@ -97,7 +97,6 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     );
   }
 
-  // --- UPDATED IMAGE PICKING LOGIC ---
   Future<void> _pickImage(ImageSource source) async {
     try {
       final picked = await ImagePicker().pickImage(
@@ -156,7 +155,72 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
       ),
     );
   }
-  // ----------------------------------
+
+  String _buildFullAddress(Placemark place) {
+    final parts = <String>[
+      if ((place.subThoroughfare ?? '').trim().isNotEmpty)
+        place.subThoroughfare!.trim(),
+      if ((place.thoroughfare ?? '').trim().isNotEmpty)
+        place.thoroughfare!.trim(),
+      if ((place.subLocality ?? '').trim().isNotEmpty)
+        place.subLocality!.trim(),
+      if ((place.locality ?? '').trim().isNotEmpty) place.locality!.trim(),
+      if ((place.administrativeArea ?? '').trim().isNotEmpty)
+        place.administrativeArea!.trim(),
+      if ((place.postalCode ?? '').trim().isNotEmpty)
+        place.postalCode!.trim(),
+      if ((place.country ?? '').trim().isNotEmpty) place.country!.trim(),
+    ];
+
+    final uniqueParts = <String>[];
+    for (final part in parts) {
+      if (!uniqueParts.contains(part)) {
+        uniqueParts.add(part);
+      }
+    }
+
+    return uniqueParts.join(', ');
+  }
+
+  String _buildAreaKey(Placemark place) {
+    final parts = <String>[
+      if ((place.thoroughfare ?? '').trim().isNotEmpty)
+        place.thoroughfare!.trim(),
+      if ((place.subLocality ?? '').trim().isNotEmpty &&
+          (place.thoroughfare ?? '').trim().isEmpty)
+        place.subLocality!.trim(),
+      if ((place.locality ?? '').trim().isNotEmpty) place.locality!.trim(),
+      if ((place.administrativeArea ?? '').trim().isNotEmpty)
+        place.administrativeArea!.trim(),
+    ];
+
+    final uniqueParts = <String>[];
+    for (final part in parts) {
+      if (!uniqueParts.contains(part)) {
+        uniqueParts.add(part);
+      }
+    }
+
+    return uniqueParts.join(', ');
+  }
+
+  Future<void> _setAreaFromCoordinates(double lat, double lng) async {
+    try {
+      final placemarks = await placemarkFromCoordinates(lat, lng);
+      if (placemarks.isEmpty) return;
+
+      final place = placemarks.first;
+      final areaKey = _buildAreaKey(place);
+
+      setState(() {
+        _detectedArea = areaKey.isNotEmpty
+            ? areaKey
+            : '${place.locality ?? ''}, ${place.administrativeArea ?? ''}'
+                .replaceAll(RegExp(r'^,\s*|,\s*$'), '')
+                .trim();
+      });
+    } catch (_) {}
+  }
 
   Future<void> _getCurrentLocation() async {
     setState(() => _isGettingLocation = true);
@@ -179,20 +243,54 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
 
       final position = await Geolocator.getCurrentPosition();
 
-      setState(() {
-        _latitude = position.latitude;
-        _longitude = position.longitude;
-      });
-
-      final placemarks = await placemarkFromCoordinates(_latitude, _longitude);
-      final place = placemarks.first;
-
-      String state = place.administrativeArea ?? '';
-      String city = place.locality ?? '';
+      final lat = position.latitude;
+      final lng = position.longitude;
 
       setState(() {
-        _locationController.text = "$city, $state";
+        _latitude = lat;
+        _longitude = lng;
       });
+
+      final url = Uri.parse(
+        'https://maps.googleapis.com/maps/api/geocode/json?latlng=$lat,$lng&key=$_googleApiKey',
+      );
+
+      final request = await HttpClient().getUrl(url);
+      final response = await request.close();
+      final responseBody =
+          await response.transform(utf8.decoder).join();
+      final data = jsonDecode(responseBody);
+
+      if (data['status'] == 'OK' &&
+          data['results'] != null &&
+          data['results'].isNotEmpty) {
+        final address = data['results'][0]['formatted_address'] as String;
+
+        setState(() {
+          _locationController.text = address;
+        });
+      } else {
+        final placemarks = await placemarkFromCoordinates(lat, lng);
+        if (placemarks.isNotEmpty) {
+          final place = placemarks.first;
+          final fullAddress = _buildFullAddress(place);
+
+          setState(() {
+            _locationController.text = fullAddress.isNotEmpty
+                ? fullAddress
+                : '${place.locality ?? ''}, ${place.administrativeArea ?? ''}, ${place.country ?? ''}'
+                    .replaceAll(RegExp(r'^,\s*|,\s*$'), '')
+                    .trim();
+          });
+        } else {
+          setState(() {
+            _locationController.text =
+                '${lat.toStringAsFixed(6)}, ${lng.toStringAsFixed(6)}';
+          });
+        }
+      }
+
+      await _setAreaFromCoordinates(lat, lng);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -205,27 +303,87 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     }
   }
 
-  void _autoSetPriority() {
-    final description = _descriptionController.text.toLowerCase().trim();
-    final type = _wasteType.toLowerCase();
+  Future<bool> _showDuplicateWarningDialog(
+    List<WasteReport> duplicates,
+  ) async {
+    final first = duplicates.first;
+    final count = duplicates.length;
 
-    if (type.contains('hazardous') ||
-        type.contains('illegal') ||
-        description.contains('danger') ||
-        description.contains('dangerous') ||
-        description.contains('sharp') ||
-        description.contains('chemical') ||
-        description.contains('toxic') ||
-        description.contains('broken glass') ||
-        description.contains('hospital') ||
-        description.contains('school') ||
-        description.contains('road')) {
-      _priority = 'High';
-    } else if (type.contains('bulky') || type.contains('plastic')) {
-      _priority = 'Medium';
-    } else {
-      _priority = 'Low';
+    return await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            title: const Text(
+              'Possible Duplicate Report',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            content: Text(
+              count == 1
+                  ? 'A similar report was found within 100 meters in the last 24 hours.\n\n'
+                      'Existing report:\n'
+                      '• Title: ${first.title}\n'
+                      '• Location: ${first.location}\n'
+                      '• Status: ${first.status}\n\n'
+                      'Do you still want to submit this report?'
+                  : '$count similar reports were found within 100 meters in the last 24 hours.\n\n'
+                      'Nearest example:\n'
+                      '• Title: ${first.title}\n'
+                      '• Location: ${first.location}\n'
+                      '• Status: ${first.status}\n\n'
+                      'Do you still want to submit this report?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Submit Anyway'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
+  Future<List<WasteReport>> _checkPotentialDuplicates() async {
+    if (_latitude == 0.0 && _longitude == 0.0) {
+      return [];
     }
+
+    final duplicates = await _firestoreService.findNearbyDuplicateCandidates(
+      wasteType: _wasteType,
+      latitude: _latitude,
+      longitude: _longitude,
+      withinDuration: const Duration(hours: 24),
+      radiusMeters: 100,
+      maxResults: 50,
+    );
+
+    duplicates.sort((a, b) {
+      final distanceA = Geolocator.distanceBetween(
+        _latitude,
+        _longitude,
+        a.latitude,
+        a.longitude,
+      );
+      final distanceB = Geolocator.distanceBetween(
+        _latitude,
+        _longitude,
+        b.latitude,
+        b.longitude,
+      );
+      return distanceA.compareTo(distanceB);
+    });
+
+    return duplicates;
   }
 
   Future<void> _submitReport() async {
@@ -247,9 +405,27 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
       return;
     }
 
-    if (_locationController.text.isEmpty) {
+    if (_locationController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please provide a location')),
+      );
+      return;
+    }
+
+    if (_detectedArea.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please detect location first')),
+      );
+      return;
+    }
+
+    if (_latitude == 0.0 && _longitude == 0.0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Please use current location or select a suggested location before submitting',
+          ),
+        ),
       );
       return;
     }
@@ -257,8 +433,25 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     setState(() => _isLoading = true);
 
     try {
+      final duplicates = await _checkPotentialDuplicates();
+
+      if (duplicates.isNotEmpty) {
+        if (!mounted) return;
+
+        final shouldContinue = await _showDuplicateWarningDialog(duplicates);
+
+        if (!shouldContinue) {
+          setState(() => _isLoading = false);
+          return;
+        }
+      }
+
       final imageUrl = await _storageService.uploadReportImage(_imageFile!);
       final now = Timestamp.now();
+
+      final autoPriority = await _firestoreService.getAutoPriorityByArea(
+        _detectedArea.trim(),
+      );
 
       final report = WasteReport(
         id: '',
@@ -270,10 +463,11 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
         title: _titleController.text.trim(),
         description: _descriptionController.text.trim(),
         location: _locationController.text.trim(),
+        area: _detectedArea.trim(),
         wasteType: _wasteType,
         imageUrl: imageUrl,
         status: 'Pending',
-        priority: _priority,
+        priority: autoPriority,
         collectorId: '',
         collectorName: '',
         adminRemark: '',
@@ -290,8 +484,10 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Report submitted successfully!'),
+        SnackBar(
+          content: Text(
+            'Report submitted successfully! Priority: $autoPriority',
+          ),
           backgroundColor: Colors.green,
         ),
       );
@@ -303,9 +499,9 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
       setState(() {
         _imageFile = null;
         _wasteType = 'General Waste';
-        _priority = 'Medium';
         _latitude = 0.0;
         _longitude = 0.0;
+        _detectedArea = '';
       });
 
       Navigator.pop(context);
@@ -349,19 +545,6 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
         vertical: 16,
       ),
     );
-  }
-
-  Color _priorityColor(String priority) {
-    switch (priority) {
-      case 'High':
-        return Colors.red;
-      case 'Medium':
-        return Colors.orange;
-      case 'Low':
-        return Colors.green;
-      default:
-        return Colors.grey;
-    }
   }
 
   @override
@@ -420,8 +603,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                   ),
                   const SizedBox(height: 10),
                   GestureDetector(
-                    // UPDATED: Now calls the options sheet
-                    onTap: _isLoading ? null : _showImageSourceOptions, 
+                    onTap: _isLoading ? null : _showImageSourceOptions,
                     child: Container(
                       height: 200,
                       width: double.infinity,
@@ -439,7 +621,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                             color: Colors.black.withOpacity(0.04),
                             blurRadius: 10,
                             offset: const Offset(0, 4),
-                          )
+                          ),
                         ],
                       ),
                       child: _imageFile != null
@@ -498,7 +680,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                                         ],
                                       ),
                                     ),
-                                  )
+                                  ),
                                 ],
                               ),
                             )
@@ -541,7 +723,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                           color: Colors.black.withOpacity(0.03),
                           blurRadius: 15,
                           offset: const Offset(0, 5),
-                        )
+                        ),
                       ],
                     ),
                     child: Column(
@@ -589,42 +771,6 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                             if (value != null) {
                               setState(() {
                                 _wasteType = value;
-                                _autoSetPriority();
-                              });
-                            }
-                          },
-                        ),
-                        const SizedBox(height: 16),
-                        DropdownButtonFormField<String>(
-                          value: _priority,
-                          decoration: _modernDecoration(
-                            'Priority Level',
-                            Icons.priority_high_rounded,
-                          ),
-                          icon: const Icon(Icons.keyboard_arrow_down_rounded),
-                          dropdownColor: Colors.white,
-                          borderRadius: BorderRadius.circular(15),
-                          items: _priorityOptions.map((priority) {
-                            final color = _priorityColor(priority);
-                            return DropdownMenuItem(
-                              value: priority,
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    Icons.circle,
-                                    size: 10,
-                                    color: color,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(priority),
-                                ],
-                              ),
-                            );
-                          }).toList(),
-                          onChanged: (value) {
-                            if (value != null) {
-                              setState(() {
-                                _priority = value;
                               });
                             }
                           },
@@ -633,11 +779,6 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                         TextFormField(
                           controller: _descriptionController,
                           maxLines: 3,
-                          onChanged: (_) {
-                            setState(() {
-                              _autoSetPriority();
-                            });
-                          },
                           decoration: _modernDecoration(
                             'Additional details...',
                             Icons.notes_rounded,
@@ -657,22 +798,100 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                         const SizedBox(height: 20),
                         Divider(color: Colors.grey.shade200),
                         const SizedBox(height: 10),
+                        Text(
+                          'Location',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey.shade700,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Expanded(
-                              child: TextFormField(
-                                controller: _locationController,
-                                decoration: _modernDecoration(
-                                  'Location',
+                              child: GooglePlaceAutoCompleteTextField(
+                                textEditingController: _locationController,
+                                googleAPIKey: _googleApiKey,
+                                inputDecoration: _modernDecoration(
+                                  'Search location',
                                   Icons.pin_drop_outlined,
                                 ),
-                                validator: (value) {
-                                  if (value == null || value.trim().isEmpty) {
-                                    return 'Required';
+                                debounceTime: 600,
+                                isLatLngRequired: true,
+                                countries: const ['my'],
+                                boxDecoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(15),
+                                ),
+                                itemClick: (prediction) async {
+                                  final selectedText =
+                                      prediction.description ?? '';
+
+                                  _locationController.text = selectedText;
+                                  _locationController.selection =
+                                      TextSelection.fromPosition(
+                                    TextPosition(offset: selectedText.length),
+                                  );
+
+                                  final lat =
+                                      double.tryParse(prediction.lat ?? '');
+                                  final lng =
+                                      double.tryParse(prediction.lng ?? '');
+
+                                  if (lat != null && lng != null) {
+                                    setState(() {
+                                      _latitude = lat;
+                                      _longitude = lng;
+                                    });
+
+                                    await _setAreaFromCoordinates(lat, lng);
                                   }
-                                  return null;
                                 },
+                                getPlaceDetailWithLatLng: (prediction) async {
+                                  final lat =
+                                      double.tryParse(prediction.lat ?? '');
+                                  final lng =
+                                      double.tryParse(prediction.lng ?? '');
+
+                                  if (lat != null && lng != null) {
+                                    setState(() {
+                                      _latitude = lat;
+                                      _longitude = lng;
+                                    });
+
+                                    await _setAreaFromCoordinates(lat, lng);
+                                  }
+                                },
+                                itemBuilder: (context, index, prediction) {
+                                  return Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 12,
+                                    ),
+                                    child: Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Icon(
+                                          Icons.location_on_outlined,
+                                          color: Colors.green.shade600,
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: Text(
+                                            prediction.description ?? '',
+                                            style:
+                                                const TextStyle(fontSize: 14),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                                seperatedBuilder: const Divider(height: 1),
+                                isCrossBtnShown: false,
+                                containerHorizontalPadding: 0,
                               ),
                             ),
                             const SizedBox(width: 12),
@@ -705,6 +924,41 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                               ),
                             ),
                           ],
+                        ),
+                        const SizedBox(height: 12),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 14,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.green.shade50,
+                            borderRadius: BorderRadius.circular(15),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(
+                                Icons.auto_awesome_outlined,
+                                color: Colors.green.shade700,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  _detectedArea.isEmpty
+                                      ? 'Area will be detected after selecting a suggested location or using current location.'
+                                      : 'Detected area: $_detectedArea',
+                                  style: TextStyle(
+                                    color: Colors.green.shade800,
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),

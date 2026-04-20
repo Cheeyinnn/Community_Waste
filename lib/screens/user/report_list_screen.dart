@@ -110,6 +110,19 @@ class _ReportListScreenState extends State<ReportListScreen> {
     }
   }
 
+  Color _priorityColor(String priority) {
+    switch (priority) {
+      case 'High':
+        return Colors.red;
+      case 'Medium':
+        return Colors.orange;
+      case 'Low':
+        return Colors.green;
+      default:
+        return Colors.grey;
+    }
+  }
+
   String _formatDate(dynamic timestamp) {
     try {
       final date = timestamp.toDate();
@@ -320,6 +333,7 @@ class _ReportListScreenState extends State<ReportListScreen> {
 
   Widget _buildReportCard(BuildContext context, WasteReport report) {
     final statusColor = _statusColor(report.status);
+    final priorityColor = _priorityColor(report.priority);
 
     return Container(
       decoration: BoxDecoration(
@@ -420,7 +434,6 @@ class _ReportListScreenState extends State<ReportListScreen> {
                     ),
                     const SizedBox(height: 12),
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Container(
                           padding: const EdgeInsets.symmetric(
@@ -440,11 +453,32 @@ class _ReportListScreenState extends State<ReportListScreen> {
                             ),
                           ),
                         ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: priorityColor.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            report.priority,
+                            style: TextStyle(
+                              color: priorityColor,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                        const Spacer(),
                         Flexible(
                           child: Text(
                             report.wasteType,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.right,
                             style: TextStyle(
                               fontSize: 12,
                               color: Colors.grey.shade400,

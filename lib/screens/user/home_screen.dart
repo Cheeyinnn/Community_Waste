@@ -20,9 +20,14 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen>
+    with AutomaticKeepAliveClientMixin {
   final AuthService authService = AuthService();
   final FirestoreService firestoreService = FirestoreService();
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  bool get wantKeepAlive => true;
 
   Future<DateTime?> _getLastNotificationReadTime(String userId) async {
     final prefs = await SharedPreferences.getInstance();
@@ -46,7 +51,15 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    super.build(context);
+
     final user = FirebaseAuth.instance.currentUser;
 
     final String userName = user?.displayName?.trim().isNotEmpty == true
@@ -93,6 +106,9 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             SingleChildScrollView(
+              key: const PageStorageKey<String>('user_home_scroll'),
+              controller: _scrollController,
+              physics: const ClampingScrollPhysics(),
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -109,6 +125,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     onTap: widget.onCreateReport,
                   ),
                   const SizedBox(height: 28),
+
                   const Text(
                     'Overview',
                     style: TextStyle(
@@ -118,6 +135,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                   const SizedBox(height: 14),
+
                   Row(
                     children: [
                       Expanded(
@@ -186,65 +204,16 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ],
                   ),
+
                   const SizedBox(height: 28),
-                  const Text(
-                    'Recent Activity',
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.black87,
-                    ),
+
+                  _ContributionSection(
+                    userId: userId,
+                    firestoreService: firestoreService,
                   ),
-                  const SizedBox(height: 14),
-                  StreamBuilder<List<WasteReport>>(
-                    stream: firestoreService.getRecentUserActivities(userId),
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(20),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: const Center(
-                            child: CircularProgressIndicator(),
-                          ),
-                        );
-                      }
 
-                      if (snapshot.hasError) {
-                        return _buildEmptyActivityCard(
-                          text: 'Failed to load recent activity.',
-                        );
-                      }
-
-                      final reports = snapshot.data ?? [];
-
-                      if (reports.isEmpty) {
-                        return _buildEmptyActivityCard(
-                          text: 'No recent activity yet.',
-                        );
-                      }
-
-                      return Column(
-                        children: reports.map((report) {
-                          final activity = _buildActivityData(report);
-
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
-                            child: _buildActivityTile(
-                              icon: activity['icon'] as IconData,
-                              color: activity['color'] as Color,
-                              title: activity['title'] as String,
-                              subtitle: activity['subtitle'] as String,
-                            ),
-                          );
-                        }).toList(),
-                      );
-                    },
-                  ),
                   const SizedBox(height: 28),
+
                   const Text(
                     'Latest Reports',
                     style: TextStyle(
@@ -254,6 +223,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                   const SizedBox(height: 14),
+
                   StreamBuilder<List<WasteReport>>(
                     stream: firestoreService.getRecentUserReports(userId),
                     builder: (context, snapshot) {
@@ -272,7 +242,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       }
 
                       if (snapshot.hasError) {
-                        return _buildEmptyActivityCard(
+                        return _buildEmptyCard(
                           text: 'Failed to load latest reports.',
                         );
                       }
@@ -280,7 +250,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       final reports = snapshot.data ?? [];
 
                       if (reports.isEmpty) {
-                        return _buildEmptyActivityCard(
+                        return _buildEmptyCard(
                           text: 'No reports submitted yet.',
                         );
                       }
@@ -645,54 +615,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildActivityTile({
-    required IconData icon,
-    required Color color,
-    required String title,
-    required String subtitle,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(15),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 24,
-            backgroundColor: color.withOpacity(0.12),
-            child: Icon(icon, color: color),
-          ),
-          const SizedBox(width: 13),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 15,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    color: Colors.grey.shade700,
-                    fontSize: 13,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildReportTile(WasteReport report) {
     final Color statusColor = _getStatusColor(report.status);
 
@@ -764,7 +686,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildEmptyActivityCard({required String text}) {
+  Widget _buildEmptyCard({required String text}) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(18),
@@ -783,61 +705,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Map<String, dynamic> _buildActivityData(WasteReport report) {
-    final String title = report.title;
-    final String collectorName = report.collectorName;
-    final String adminRemark = report.adminRemark;
-
-    switch (report.status) {
-      case 'Pending':
-        return {
-          'icon': Icons.report_gmailerrorred,
-          'color': Colors.orange,
-          'title': 'Report submitted successfully',
-          'subtitle': 'Your report "$title" is under review.',
-        };
-      case 'Assigned':
-        return {
-          'icon': Icons.local_shipping_outlined,
-          'color': Colors.deepPurple,
-          'title': 'Collector assigned',
-          'subtitle': collectorName.isNotEmpty
-              ? 'Collector $collectorName has been assigned to "$title".'
-              : 'A collector has been assigned to "$title".',
-        };
-      case 'In Progress':
-        return {
-          'icon': Icons.autorenew_rounded,
-          'color': Colors.blue,
-          'title': 'Cleanup in progress',
-          'subtitle': 'Your report "$title" is currently being handled.',
-        };
-      case 'Resolved':
-        return {
-          'icon': Icons.check_circle_outline,
-          'color': Colors.green,
-          'title': 'Issue resolved',
-          'subtitle': 'Your report "$title" has been marked as resolved.',
-        };
-      case 'Rejected':
-        return {
-          'icon': Icons.cancel_outlined,
-          'color': Colors.red,
-          'title': 'Report rejected',
-          'subtitle': adminRemark.isNotEmpty
-              ? 'Reason: $adminRemark'
-              : 'Your report "$title" was rejected.',
-        };
-      default:
-        return {
-          'icon': Icons.info_outline,
-          'color': Colors.grey,
-          'title': 'Report updated',
-          'subtitle': 'Your report "$title" has new updates.',
-        };
-    }
-  }
-
   Color _getStatusColor(String status) {
     switch (status) {
       case 'Pending':
@@ -853,5 +720,321 @@ class _HomeScreenState extends State<HomeScreen> {
       default:
         return Colors.grey;
     }
+  }
+}
+
+class _ContributionSection extends StatefulWidget {
+  final String userId;
+  final FirestoreService firestoreService;
+
+  const _ContributionSection({
+    required this.userId,
+    required this.firestoreService,
+  });
+
+  @override
+  State<_ContributionSection> createState() => _ContributionSectionState();
+}
+
+class _ContributionSectionState extends State<_ContributionSection>
+    with AutomaticKeepAliveClientMixin {
+  String _selectedContributionRange = 'Overall';
+
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'My Contribution',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                color: Colors.black87,
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Colors.grey.shade200),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: _selectedContributionRange,
+                  icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                  borderRadius: BorderRadius.circular(14),
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'Overall',
+                      child: Text('Overall'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'Last 7 Days',
+                      child: Text('Last 7 Days'),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) {
+                      setState(() {
+                        _selectedContributionRange = value;
+                      });
+                    }
+                  },
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        StreamBuilder<List<WasteReport>>(
+          stream: widget.firestoreService.getUserReports(widget.userId),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                child: const Center(
+                  child: CircularProgressIndicator(),
+                ),
+              );
+            }
+
+            if (snapshot.hasError) {
+              return _buildEmptyCard(
+                text: 'Failed to load contribution data.',
+              );
+            }
+
+            final reports = snapshot.data ?? [];
+            final now = DateTime.now();
+            final last7Days = now.subtract(const Duration(days: 7));
+
+            final List<WasteReport> filteredReports =
+                _selectedContributionRange == 'Last 7 Days'
+                    ? reports.where((r) {
+                        final created = r.createdAt.toDate();
+                        return created.isAfter(last7Days);
+                      }).toList()
+                    : reports;
+
+            final int submitted = filteredReports.length;
+            final int resolved =
+                filteredReports.where((r) => r.status == 'Resolved').length;
+
+            final double rate =
+                submitted == 0 ? 0.0 : (resolved / submitted).clamp(0.0, 1.0);
+
+            return Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: Colors.grey.shade200),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.04),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: 4,
+                        child: _buildCircularContribution(rate),
+                      ),
+                      const SizedBox(width: 18),
+                      Expanded(
+                        flex: 5,
+                        child: Column(
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _buildMiniContributionStat(
+                                    title: _selectedContributionRange ==
+                                            'Last 7 Days'
+                                        ? 'Resolved (7d)'
+                                        : 'Resolved',
+                                    value: resolved.toString(),
+                                    color: Colors.green,
+                                    icon: Icons.check_circle_outline,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: _buildMiniContributionStat(
+                                    title: _selectedContributionRange ==
+                                            'Last 7 Days'
+                                        ? 'Submitted (7d)'
+                                        : 'Submitted',
+                                    value: submitted.toString(),
+                                    color: Colors.blue,
+                                    icon: Icons.assignment_outlined,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: LinearProgressIndicator(
+                      value: rate,
+                      minHeight: 10,
+                      backgroundColor: Colors.grey.shade200,
+                      valueColor: const AlwaysStoppedAnimation<Color>(
+                        Color(0xFF35C76F),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    _selectedContributionRange == 'Last 7 Days'
+                        ? '${(rate * 100).round()}% resolved in the last 7 days.'
+                        : '${(rate * 100).round()}% of your reports have been successfully resolved.',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.grey.shade700,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCircularContribution(double rate) {
+    return Column(
+      children: [
+        SizedBox(
+          width: 120,
+          height: 120,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              SizedBox(
+                width: 120,
+                height: 120,
+                child: CircularProgressIndicator(
+                  value: rate,
+                  strokeWidth: 10,
+                  backgroundColor: Colors.grey.shade200,
+                  valueColor: const AlwaysStoppedAnimation<Color>(
+                    Color(0xFF35C76F),
+                  ),
+                ),
+              ),
+              Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    '${(rate * 100).round()}%',
+                    style: const TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  Text(
+                    'Completion',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey.shade600,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMiniContributionStat({
+    required String title,
+    required String value,
+    required Color color,
+    required IconData icon,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(height: 10),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              color: Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey.shade700,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyCard({required String text}) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: Colors.grey.shade700,
+          fontSize: 14,
+        ),
+      ),
+    );
   }
 }

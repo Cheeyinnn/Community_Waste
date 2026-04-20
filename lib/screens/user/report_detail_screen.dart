@@ -31,7 +31,19 @@ class ReportDetailScreen extends StatelessWidget {
     }
   }
 
-  /// ✅ FIXED VERSION (NO CRASH)
+  Color _priorityColor(String priority) {
+    switch (priority) {
+      case 'High':
+        return Colors.red;
+      case 'Medium':
+        return Colors.orange;
+      case 'Low':
+        return Colors.green;
+      default:
+        return Colors.grey;
+    }
+  }
+
   String _formatTimestamp(dynamic timestamp) {
     if (timestamp == null) return '-';
 
@@ -49,14 +61,24 @@ class ReportDetailScreen extends StatelessWidget {
 
   Future<void> _showStatusDialog(BuildContext context) async {
     String selectedStatus = report.status;
-    final statuses = ['Pending', 'Assigned', 'In Progress', 'Resolved', 'Rejected'];
+    final statuses = [
+      'Pending',
+      'Assigned',
+      'In Progress',
+      'Resolved',
+      'Rejected'
+    ];
 
     await showDialog(
       context: context,
       builder: (context) {
         return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Text('Update Status', style: TextStyle(fontWeight: FontWeight.bold)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text(
+            'Update Status',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
           content: StatefulBuilder(
             builder: (context, setState) {
               return Container(
@@ -70,11 +92,17 @@ class ReportDetailScreen extends StatelessWidget {
                   child: DropdownButton<String>(
                     value: selectedStatus,
                     isExpanded: true,
-                    icon: Icon(Icons.keyboard_arrow_down_rounded, color: Colors.green.shade600),
+                    icon: Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      color: Colors.green.shade600,
+                    ),
                     items: statuses.map((status) {
                       return DropdownMenuItem<String>(
                         value: status,
-                        child: Text(status, style: const TextStyle(fontWeight: FontWeight.w500)),
+                        child: Text(
+                          status,
+                          style: const TextStyle(fontWeight: FontWeight.w500),
+                        ),
                       );
                     }).toList(),
                     onChanged: (value) {
@@ -92,7 +120,13 @@ class ReportDetailScreen extends StatelessWidget {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: Text('Cancel', style: TextStyle(color: Colors.grey.shade600, fontWeight: FontWeight.bold)),
+              child: Text(
+                'Cancel',
+                style: TextStyle(
+                  color: Colors.grey.shade600,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
             ElevatedButton(
               onPressed: () {
@@ -104,7 +138,9 @@ class ReportDetailScreen extends StatelessWidget {
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.green.shade600,
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
               child: const Text('Save'),
             ),
@@ -117,6 +153,7 @@ class ReportDetailScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final statusColor = _statusColor(report.status);
+    final priorityColor = _priorityColor(report.priority);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF7F9FC),
@@ -140,7 +177,10 @@ class ReportDetailScreen extends StatelessWidget {
                     ),
                     child: IconButton(
                       onPressed: () => _showStatusDialog(context),
-                      icon: Icon(Icons.edit_rounded, color: Colors.green.shade700),
+                      icon: Icon(
+                        Icons.edit_rounded,
+                        color: Colors.green.shade700,
+                      ),
                     ),
                   ),
                 ),
@@ -157,19 +197,20 @@ class ReportDetailScreen extends StatelessWidget {
                     )
                   : Container(
                       color: Colors.green.shade50,
-                      child: Icon(Icons.image_not_supported, size: 60, color: Colors.green.shade200),
+                      child: Icon(
+                        Icons.image_not_supported,
+                        size: 60,
+                        color: Colors.green.shade200,
+                      ),
                     ),
             ),
           ),
-
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.all(20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-
-                  /// TITLE + STATUS
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -183,7 +224,10 @@ class ReportDetailScreen extends StatelessWidget {
                         ),
                       ),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
                         decoration: BoxDecoration(
                           color: statusColor.withOpacity(0.15),
                           borderRadius: BorderRadius.circular(20),
@@ -198,31 +242,37 @@ class ReportDetailScreen extends StatelessWidget {
                       ),
                     ],
                   ),
-
                   const SizedBox(height: 10),
-
-                  /// CREATED TIME (SAFE)
                   Text(
                     "Reported: ${_formatTimestamp(report.createdAt)}",
                     style: TextStyle(color: Colors.grey.shade600),
                   ),
-
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: priorityColor.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      "Priority: ${report.priority}",
+                      style: TextStyle(
+                        color: priorityColor,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
                   const SizedBox(height: 20),
-
-                  /// UPDATED TIME (SAFE)
                   Text(
                     "Last Updated: ${_formatTimestamp(report.updatedAt)}",
                     style: TextStyle(color: Colors.grey.shade600),
                   ),
-
                   const SizedBox(height: 20),
-
-                  /// DESCRIPTION
                   Text(report.description),
-
                   const SizedBox(height: 20),
-
-                  /// COMPLETION IMAGE
                   if (report.completionImageUrl.isNotEmpty)
                     ClipRRect(
                       borderRadius: BorderRadius.circular(12),

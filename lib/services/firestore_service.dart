@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:geolocator/geolocator.dart';
 import '../models/waste_report.dart';
 
 class FirestoreService {
@@ -24,6 +25,85 @@ class FirestoreService {
     data['updatedAt'] ??= data['createdAt'] ?? Timestamp.now();
 
     await _reportsRef.add(data);
+  }
+
+  Future<List<WasteReport>> findPotentialDuplicateReports({
+    required String wasteType,
+    Duration withinDuration = const Duration(hours: 24),
+    int maxResults = 50,
+  }) async {
+    final cutoff = DateTime.now().subtract(withinDuration);
+
+    final snapshot = await _reportsRef
+        .where('wasteType', isEqualTo: wasteType)
+        .where(
+          'createdAt',
+          isGreaterThanOrEqualTo: Timestamp.fromDate(cutoff),
+        )
+        .limit(maxResults)
+        .get();
+
+    return snapshot.docs
+        .map((doc) => WasteReport.fromMap(doc.data(), doc.id))
+        .toList();
+  }
+
+  Future<List<WasteReport>> findNearbyDuplicateCandidates({
+    required String wasteType,
+    required double latitude,
+    required double longitude,
+    Duration withinDuration = const Duration(hours: 24),
+    double radiusMeters = 100,
+    int maxResults = 50,
+  }) async {
+    final recentReports = await findPotentialDuplicateReports(
+      wasteType: wasteType,
+      withinDuration: withinDuration,
+      maxResults: maxResults,
+    );
+
+    return recentReports.where((report) {
+      if (report.latitude == 0.0 && report.longitude == 0.0) {
+        return false;
+      }
+
+      final distance = Geolocator.distanceBetween(
+        latitude,
+        longitude,
+        report.latitude,
+        report.longitude,
+      );
+
+      return distance <= radiusMeters;
+    }).toList();
+  }
+
+  Future<int> getRecentReportCountByArea(String area) async {
+    final now = DateTime.now();
+    final sevenDaysAgo = now.subtract(const Duration(days: 7));
+
+    final snapshot = await _reportsRef
+        .where('area', isEqualTo: area.trim())
+        .where(
+          'createdAt',
+          isGreaterThanOrEqualTo: Timestamp.fromDate(sevenDaysAgo),
+        )
+        .get();
+
+    return snapshot.docs.length;
+  }
+
+  Future<String> getAutoPriorityByArea(String area) async {
+    final existingCount = await getRecentReportCountByArea(area);
+    final totalAfterSubmit = existingCount + 1;
+
+    if (totalAfterSubmit >= 3) {
+      return 'High';
+    } else if (totalAfterSubmit == 2) {
+      return 'Medium';
+    } else {
+      return 'Low';
+    }
   }
 
   Stream<List<WasteReport>> getUserReports(String userId) {
@@ -147,6 +227,7 @@ class FirestoreService {
     required String title,
     required String description,
     required String location,
+    required String area,
     required String wasteType,
     String? priority,
     double? latitude,
@@ -156,6 +237,7 @@ class FirestoreService {
       'title': title,
       'description': description,
       'location': location,
+      'area': area,
       'wasteType': wasteType,
       'updatedAt': Timestamp.now(),
     };

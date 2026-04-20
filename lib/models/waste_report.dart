@@ -6,7 +6,8 @@ class WasteReport {
   final String userName;
   final String title;
   final String description;
-  final String location;
+  final String location; // Full address for display/navigation
+  final String area; // Grouped area for analytics/hotspot/priority
   final String wasteType;
   final String imageUrl;
   final String status;
@@ -28,6 +29,7 @@ class WasteReport {
     required this.title,
     required this.description,
     required this.location,
+    required this.area,
     required this.wasteType,
     required this.imageUrl,
     required this.status,
@@ -56,6 +58,7 @@ class WasteReport {
       title: (map['title'] ?? '').toString(),
       description: (map['description'] ?? '').toString(),
       location: (map['location'] ?? '').toString(),
+      area: (map['area'] ?? '').toString(),
       wasteType: (map['wasteType'] ?? '').toString(),
       imageUrl: (map['imageUrl'] ?? '').toString(),
       status: (map['status'] ?? 'Pending').toString(),
@@ -81,6 +84,7 @@ class WasteReport {
       'title': title,
       'description': description,
       'location': location,
+      'area': area,
       'wasteType': wasteType,
       'imageUrl': imageUrl,
       'status': status,
@@ -104,6 +108,7 @@ class WasteReport {
     String? title,
     String? description,
     String? location,
+    String? area,
     String? wasteType,
     String? imageUrl,
     String? status,
@@ -125,6 +130,7 @@ class WasteReport {
       title: title ?? this.title,
       description: description ?? this.description,
       location: location ?? this.location,
+      area: area ?? this.area,
       wasteType: wasteType ?? this.wasteType,
       imageUrl: imageUrl ?? this.imageUrl,
       status: status ?? this.status,

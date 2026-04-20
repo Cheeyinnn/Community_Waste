@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
@@ -7,48 +6,24 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../models/waste_report.dart';
 import '../../services/firestore_service.dart';
 import '../../services/storage_service.dart';
-import 'collector_report_detail_screen.dart';
 
-class CollectorTaskScreen extends StatefulWidget {
-  final String initialFilter;
+class CollectorReportDetailScreen extends StatefulWidget {
+  final WasteReport report;
 
-  const CollectorTaskScreen({
+  const CollectorReportDetailScreen({
     super.key,
-    this.initialFilter = 'All',
+    required this.report,
   });
 
   @override
-  State<CollectorTaskScreen> createState() => _CollectorTaskScreenState();
+  State<CollectorReportDetailScreen> createState() =>
+      _CollectorReportDetailScreenState();
 }
 
-class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
-  late String _selectedFilter;
-
-  final List<String> _filters = [
-    'All',
-    'Assigned',
-    'In Progress',
-    'Resolved',
-  ];
-
+class _CollectorReportDetailScreenState
+    extends State<CollectorReportDetailScreen> {
+  final FirestoreService _firestoreService = FirestoreService();
   final StorageService _storageService = StorageService();
-
-  @override
-  void initState() {
-    super.initState();
-    _selectedFilter = widget.initialFilter;
-  }
-
-  @override
-  void didUpdateWidget(covariant CollectorTaskScreen oldWidget) {
-    super.didUpdateWidget(oldWidget);
-
-    if (oldWidget.initialFilter != widget.initialFilter) {
-      setState(() {
-        _selectedFilter = widget.initialFilter;
-      });
-    }
-  }
 
   Color _statusColor(String status) {
     switch (status) {
@@ -70,14 +45,11 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
   String _formatDate(dynamic timestamp) {
     if (timestamp == null) return 'No date';
     final date = timestamp.toDate();
-    return DateFormat('dd MMM, hh:mm a').format(date);
+    return DateFormat('dd MMM yyyy, hh:mm a').format(date);
   }
 
-  Future<void> _openGoogleMaps(
-    BuildContext context,
-    WasteReport report,
-  ) async {
-    final String query = Uri.encodeComponent(report.location);
+  Future<void> _openGoogleMaps() async {
+    final String query = Uri.encodeComponent(widget.report.location);
 
     final Uri googleMapsUrl = Uri.parse(
       "https://www.google.com/maps/search/?api=1&query=$query",
@@ -89,7 +61,7 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
         mode: LaunchMode.externalApplication,
       );
     } else {
-      if (!context.mounted) return;
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text("Could not launch Google Maps"),
@@ -98,11 +70,7 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
     }
   }
 
-  Future<void> _showNavigationOptions(
-    BuildContext context,
-    WasteReport report,
-    FirestoreService firestoreService,
-  ) async {
+  Future<void> _showNavigationOptions() async {
     await showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -151,7 +119,7 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
                   child: OutlinedButton.icon(
                     onPressed: () async {
                       Navigator.of(sheetContext).pop();
-                      await _openGoogleMaps(context, report);
+                      await _openGoogleMaps();
                     },
                     icon: const Icon(Icons.map_outlined),
                     label: const Text(
@@ -176,23 +144,23 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
                       Navigator.of(sheetContext).pop();
 
                       try {
-                        if (report.status == 'Assigned') {
-                          await firestoreService.startCollectorTask(
-                            reportId: report.id,
-                            collectorRemark: report.collectorRemark.isNotEmpty
-                                ? report.collectorRemark
-                                : 'Started via navigation',
+                        if (widget.report.status == 'Assigned') {
+                          await _firestoreService.startCollectorTask(
+                            reportId: widget.report.id,
+                            collectorRemark:
+                                widget.report.collectorRemark.isNotEmpty
+                                    ? widget.report.collectorRemark
+                                    : 'Started via navigation',
                           );
                         }
 
-                        await _openGoogleMaps(context, report);
+                        await _openGoogleMaps();
 
-                        if (!context.mounted) return;
-
+                        if (!mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text(
-                              report.status == 'Assigned'
+                              widget.report.status == 'Assigned'
                                   ? 'Task started and navigating...'
                                   : 'Navigating to location...',
                             ),
@@ -200,8 +168,7 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
                           ),
                         );
                       } catch (e) {
-                        if (!context.mounted) return;
-
+                        if (!mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text('Failed: $e'),
@@ -234,20 +201,16 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
     );
   }
 
-  Future<void> _showUpdateBottomSheet(
-    BuildContext screenContext,
-    WasteReport report,
-    FirestoreService firestoreService,
-  ) async {
-    String selectedStatus = report.status;
+  Future<void> _showUpdateBottomSheet() async {
+    String selectedStatus = widget.report.status;
     final TextEditingController remarkController =
-        TextEditingController(text: report.collectorRemark);
+        TextEditingController(text: widget.report.collectorRemark);
     File? completionImageFile;
     bool isSaving = false;
 
-    final List<String> statuses = report.status == 'Assigned'
+    final List<String> statuses = widget.report.status == 'Assigned'
         ? ['Assigned', 'In Progress', 'Resolved']
-        : report.status == 'In Progress'
+        : widget.report.status == 'In Progress'
             ? ['In Progress', 'Resolved']
             : ['Resolved'];
 
@@ -265,7 +228,7 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
     }
 
     await showModalBottomSheet(
-      context: screenContext,
+      context: context,
       isScrollControlled: true,
       useSafeArea: true,
       backgroundColor: Colors.transparent,
@@ -382,13 +345,13 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
                       GestureDetector(
                         onTap: () => pickCompletionImage(setStateSheet),
                         child: Container(
-                          height: 140,
+                          height: 160,
                           width: double.infinity,
                           decoration: BoxDecoration(
                             color: Colors.orange.shade50,
                             borderRadius: BorderRadius.circular(16),
                             border: completionImageFile == null &&
-                                    report.completionImageUrl.isEmpty
+                                    widget.report.completionImageUrl.isEmpty
                                 ? Border.all(
                                     color: Colors.orange.shade300,
                                     width: 2,
@@ -403,11 +366,11 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
                                     fit: BoxFit.cover,
                                   ),
                                 )
-                              : report.completionImageUrl.isNotEmpty
+                              : widget.report.completionImageUrl.isNotEmpty
                                   ? ClipRRect(
                                       borderRadius: BorderRadius.circular(16),
                                       child: Image.network(
-                                        report.completionImageUrl,
+                                        widget.report.completionImageUrl,
                                         fit: BoxFit.cover,
                                       ),
                                     )
@@ -450,11 +413,9 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
                             : () async {
                                 if (selectedStatus == 'Resolved' &&
                                     completionImageFile == null &&
-                                    report.completionImageUrl.isEmpty) {
-                                  if (!screenContext.mounted) return;
-
-                                  ScaffoldMessenger.of(screenContext)
-                                      .showSnackBar(
+                                    widget.report.completionImageUrl.isEmpty) {
+                                  if (!mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
                                       content: Text(
                                         'Please upload a completion image',
@@ -471,14 +432,14 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
 
                                 try {
                                   if (selectedStatus == 'In Progress') {
-                                    await firestoreService.startCollectorTask(
-                                      reportId: report.id,
+                                    await _firestoreService.startCollectorTask(
+                                      reportId: widget.report.id,
                                       collectorRemark:
                                           remarkController.text.trim(),
                                     );
                                   } else if (selectedStatus == 'Resolved') {
                                     String completionImageUrl =
-                                        report.completionImageUrl;
+                                        widget.report.completionImageUrl;
 
                                     if (completionImageFile != null) {
                                       completionImageUrl =
@@ -488,25 +449,24 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
                                       );
                                     }
 
-                                    await firestoreService.completeCollectorTask(
-                                      reportId: report.id,
+                                    await _firestoreService.completeCollectorTask(
+                                      reportId: widget.report.id,
                                       collectorRemark:
                                           remarkController.text.trim(),
                                       completionImageUrl: completionImageUrl,
                                     );
                                   } else {
-                                    await firestoreService.updateReportStatus(
-                                      reportId: report.id,
+                                    await _firestoreService.updateReportStatus(
+                                      reportId: widget.report.id,
                                       status: selectedStatus,
                                     );
                                   }
 
-                                  if (!screenContext.mounted) return;
+                                  if (!mounted) return;
 
-                                  Navigator.of(sheetContext).pop();
+                                  final messenger = ScaffoldMessenger.of(context);
 
-                                  ScaffoldMessenger.of(screenContext)
-                                      .showSnackBar(
+                                  messenger.showSnackBar(
                                     const SnackBar(
                                       content: Text(
                                         'Task updated successfully!',
@@ -514,8 +474,19 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
                                       backgroundColor: Colors.green,
                                     ),
                                   );
+
+                                  if (Navigator.of(sheetContext).canPop()) {
+                                    Navigator.of(sheetContext).pop();
+                                  }
+
+                                  Future.microtask(() {
+                                    if (mounted &&
+                                        Navigator.of(context).canPop()) {
+                                      Navigator.of(context).pop(true);
+                                    }
+                                  });
                                 } catch (e) {
-                                  if (!screenContext.mounted) return;
+                                  if (!mounted) return;
 
                                   if (builderContext.mounted) {
                                     setStateSheet(() {
@@ -523,8 +494,7 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
                                     });
                                   }
 
-                                  ScaffoldMessenger.of(screenContext)
-                                      .showSnackBar(
+                                  ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
                                       content: Text('Failed: $e'),
                                       backgroundColor: Colors.red,
@@ -555,395 +525,292 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
       },
     );
 
-    FocusScope.of(screenContext).unfocus();
+    FocusScope.of(context).unfocus();
 
     Future.delayed(const Duration(milliseconds: 300), () {
       remarkController.dispose();
     });
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final currentUser = FirebaseAuth.instance.currentUser;
-    final firestoreService = FirestoreService();
+  Widget _buildInfoTile({
+    required IconData icon,
+    required String label,
+    required String value,
+    Color? valueColor,
+    VoidCallback? onTap,
+    bool underline = false,
+  }) {
+    final tile = Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: Colors.orange),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade600,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  value.isEmpty ? '-' : value,
+                  style: TextStyle(
+                    fontSize: 14,
+                    height: 1.4,
+                    fontWeight: FontWeight.w600,
+                    color: valueColor ?? Colors.black87,
+                    decoration:
+                        underline ? TextDecoration.underline : TextDecoration.none,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
 
-    if (currentUser == null) {
-      return const Scaffold(
-        body: Center(
-          child: Text('Not logged in'),
-        ),
+    if (onTap != null) {
+      return InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: tile,
       );
     }
+
+    return tile;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final report = widget.report;
+    final statusColor = _statusColor(report.status);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF7F9FC),
       appBar: AppBar(
         title: const Text(
-          'My Tasks',
+          'Task Details',
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
         centerTitle: true,
         backgroundColor: Colors.transparent,
         elevation: 0,
         foregroundColor: Colors.black87,
-        automaticallyImplyLeading: false,
       ),
-      body: StreamBuilder<List<WasteReport>>(
-        stream: firestoreService.getCollectorReports(currentUser.uid),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
-              child: CircularProgressIndicator(color: Colors.orange),
-            );
-          }
-
-          if (snapshot.hasError) {
-            return Center(
-              child: Text('Error: ${snapshot.error}'),
-            );
-          }
-
-          final reports = snapshot.data ?? [];
-          final filteredReports = _selectedFilter == 'All'
-              ? reports
-              : reports.where((r) => r.status == _selectedFilter).toList();
-
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (report.imageUrl.isNotEmpty)
               Container(
-                height: 55,
-                margin: const EdgeInsets.symmetric(vertical: 8),
-                child: ListView.builder(
-                  key: const PageStorageKey<String>(
-                    'collector_status_filter_key',
-                  ),
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: _filters.length,
-                  itemBuilder: (context, index) {
-                    final filter = _filters[index];
-                    final isSelected = _selectedFilter == filter;
-
-                    final baseColor = filter == 'All'
-                        ? const Color(0xFF222222)
-                        : _statusColor(filter);
-
-                    final count = filter == 'All'
-                        ? reports.length
-                        : reports.where((r) => r.status == filter).length;
-
-                    return Padding(
-                      padding: const EdgeInsets.only(
-                        right: 10,
-                        top: 4,
-                        bottom: 4,
-                      ),
-                      child: ChoiceChip(
-                        label: Text('$filter ($count)'),
-                        selected: isSelected,
-                        onSelected: (_) {
-                          setState(() {
-                            _selectedFilter = filter;
-                          });
-                        },
-                        selectedColor: baseColor,
-                        backgroundColor: Colors.white,
-                        showCheckmark: false,
-                        elevation: isSelected ? 4 : 0,
-                        shadowColor: baseColor.withOpacity(0.4),
-                        labelStyle: TextStyle(
-                          color: isSelected ? Colors.white : baseColor,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(24),
-                          side: BorderSide(
-                            color: isSelected
-                                ? Colors.transparent
-                                : baseColor.withOpacity(0.5),
-                            width: 1.5,
-                          ),
-                        ),
-                      ),
-                    );
-                  },
+                width: double.infinity,
+                height: 220,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(24),
+                  color: Colors.grey.shade200,
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 8,
-                ),
-                child: Text(
-                  'Found ${filteredReports.length} tasks',
-                  style: TextStyle(
-                    color: Colors.grey.shade500,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(24),
+                  child: Image.network(
+                    report.imageUrl,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      return Icon(
+                        Icons.broken_image_outlined,
+                        size: 56,
+                        color: Colors.grey.shade400,
+                      );
+                    },
                   ),
                 ),
               ),
-              Expanded(
-                child: filteredReports.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.assignment_turned_in_outlined,
-                              size: 80,
-                              color: Colors.grey.shade300,
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              'No $_selectedFilter tasks right now',
-                              style: TextStyle(
-                                color: Colors.grey.shade500,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
-                      )
-                    : ListView.builder(
-                        key: const PageStorageKey<String>(
-                          'collector_task_list_key',
-                        ),
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
-                        physics: const ClampingScrollPhysics(),
-                        itemCount: filteredReports.length,
-                        itemBuilder: (context, index) {
-                          return _buildModernTaskCard(
-                            context,
-                            filteredReports[index],
-                            firestoreService,
-                          );
-                        },
-                      ),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildModernTaskCard(
-    BuildContext context,
-    WasteReport report,
-    FirestoreService firestoreService,
-  ) {
-    final statusColor = _statusColor(report.status);
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 15,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(24),
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => CollectorReportDetailScreen(report: report),
-              ),
-            );
-          },
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
+            const SizedBox(height: 18),
+            Row(
               children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      width: 85,
-                      height: 85,
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade100,
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(18),
-                        child: report.imageUrl.isNotEmpty
-                            ? Image.network(
-                                report.imageUrl,
-                                fit: BoxFit.cover,
-                                errorBuilder: (context, error, stackTrace) {
-                                  return Icon(
-                                    Icons.broken_image_outlined,
-                                    color: Colors.grey.shade400,
-                                  );
-                                },
-                              )
-                            : Icon(
-                                Icons.image_outlined,
-                                color: Colors.grey.shade400,
-                              ),
-                      ),
+                Expanded(
+                  child: Text(
+                    report.title,
+                    style: const TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.black87,
                     ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: statusColor.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Text(
-                                  report.status,
-                                  style: TextStyle(
-                                    color: statusColor,
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                              ),
-                              Text(
-                                _formatDate(report.createdAt),
-                                style: TextStyle(
-                                  color: Colors.grey.shade400,
-                                  fontSize: 11,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            report.title,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                              color: Colors.black87,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 8),
-                          InkWell(
-                            onTap: () => _showNavigationOptions(
-                              context,
-                              report,
-                              firestoreService,
-                            ),
-                            borderRadius: BorderRadius.circular(8),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 4),
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    Icons.near_me_rounded,
-                                    size: 16,
-                                    color: Colors.blue.shade600,
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Expanded(
-                                    child: Text(
-                                      report.location,
-                                      style: TextStyle(
-                                        color: Colors.blue.shade700,
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
-                                        decoration: TextDecoration.underline,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-                const SizedBox(height: 16),
-                Divider(color: Colors.grey.shade100, height: 1),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => CollectorReportDetailScreen(
-                                report: report,
-                              ),
-                            ),
-                          );
-                        },
-                        style: OutlinedButton.styleFrom(
-                          side: BorderSide(color: Colors.grey.shade300),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                        child: Text(
-                          'View Details',
-                          style: TextStyle(
-                            color: Colors.grey.shade700,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
+                const SizedBox(width: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: statusColor.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    report.status,
+                    style: TextStyle(
+                      color: statusColor,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12,
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: report.status == 'Resolved'
-                            ? null
-                            : () => _showUpdateBottomSheet(
-                                  context,
-                                  report,
-                                  firestoreService,
-                                ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: statusColor,
-                          foregroundColor: Colors.white,
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                        child: const Text(
-                          'Update Status',
-                          style: TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ],
             ),
-          ),
+            const SizedBox(height: 18),
+            _buildInfoTile(
+              icon: Icons.category_outlined,
+              label: 'Waste Type',
+              value: report.wasteType,
+            ),
+            const SizedBox(height: 12),
+            _buildInfoTile(
+              icon: Icons.location_on_outlined,
+              label: 'Location',
+              value: report.location,
+              valueColor: Colors.blue.shade700,
+              underline: true,
+              onTap: _showNavigationOptions,
+            ),
+            const SizedBox(height: 12),
+            _buildInfoTile(
+              icon: Icons.description_outlined,
+              label: 'Description',
+              value: report.description,
+            ),
+            const SizedBox(height: 12),
+            _buildInfoTile(
+              icon: Icons.person_outline,
+              label: 'Reported By',
+              value: report.userName,
+            ),
+            const SizedBox(height: 12),
+            _buildInfoTile(
+              icon: Icons.schedule_outlined,
+              label: 'Created At',
+              value: _formatDate(report.createdAt),
+            ),
+            const SizedBox(height: 12),
+            _buildInfoTile(
+              icon: Icons.update_outlined,
+              label: 'Updated At',
+              value: _formatDate(report.updatedAt),
+            ),
+            const SizedBox(height: 12),
+            _buildInfoTile(
+              icon: Icons.edit_note_outlined,
+              label: 'Admin Remark',
+              value: report.adminRemark,
+            ),
+            const SizedBox(height: 12),
+            _buildInfoTile(
+              icon: Icons.assignment_turned_in_outlined,
+              label: 'Collector Remark',
+              value: report.collectorRemark,
+            ),
+            if (report.completionImageUrl.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              const Text(
+                'Completion Proof',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                height: 220,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(24),
+                  color: Colors.grey.shade200,
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(24),
+                  child: Image.network(
+                    report.completionImageUrl,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      return Icon(
+                        Icons.broken_image_outlined,
+                        size: 56,
+                        color: Colors.grey.shade400,
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(height: 28),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _showNavigationOptions,
+                    icon: const Icon(Icons.near_me_outlined),
+                    label: const Text(
+                      'Navigate',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.blueGrey,
+                      side: BorderSide(color: Colors.grey.shade300),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: report.status == 'Resolved'
+                        ? null
+                        : _showUpdateBottomSheet,
+                    icon: const Icon(Icons.edit_outlined),
+                    label: const Text(
+                      'Update Status',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: statusColor,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );
