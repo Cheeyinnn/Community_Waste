@@ -243,7 +243,7 @@ class _HomeScreenState extends State<HomeScreen>
 
                       if (snapshot.hasError) {
                         return _buildEmptyCard(
-                          text: 'Failed to load latest reports. 111',
+                          text: 'Failed to load latest reports.',
                         );
                       }
 
