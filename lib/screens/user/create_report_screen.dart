@@ -486,7 +486,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Report submitted successfully! Priority: $autoPriority',
+            'Report submitted successfully! Thank you for helping keep our community clean.',
           ),
           backgroundColor: Colors.green,
         ),
