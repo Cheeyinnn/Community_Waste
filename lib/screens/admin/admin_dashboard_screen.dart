@@ -1,16 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
+
 import '../../models/waste_report.dart';
 import '../../services/firestore_service.dart';
 import 'admin_report_detail_screen.dart';
 
 class AdminDashboardScreen extends StatelessWidget {
   final Function(String filter) onNavigateToReports;
+  final Function(String area) onNavigateToReportsByArea;
   final VoidCallback onNavigateToMap;
 
   const AdminDashboardScreen({
     super.key,
     required this.onNavigateToReports,
+    required this.onNavigateToReportsByArea,
     required this.onNavigateToMap,
   });
 
@@ -29,25 +32,6 @@ class AdminDashboardScreen extends StatelessWidget {
       default:
         return Colors.grey;
     }
-  }
-
-  Color _getPriorityColor(String priority) {
-    switch (priority) {
-      case 'High':
-        return Colors.red;
-      case 'Medium':
-        return Colors.orange;
-      case 'Low':
-        return Colors.green;
-      default:
-        return Colors.grey;
-    }
-  }
-
-  String _autoPriorityFromCount(int count) {
-    if (count >= 3) return 'High';
-    if (count == 2) return 'Medium';
-    return 'Low';
   }
 
   String _timeAgo(DateTime dateTime) {
@@ -118,13 +102,8 @@ class AdminDashboardScreen extends StatelessWidget {
   Widget _buildRecentReportItem(
     BuildContext context,
     WasteReport report,
-    List<WasteReport> allReports,
   ) {
     final statusColor = _getStatusColor(report.status);
-    final sameAreaCount =
-        allReports.where((r) => r.area.trim() == report.area.trim()).length;
-    final autoPriority = _autoPriorityFromCount(sameAreaCount);
-    final priorityColor = _getPriorityColor(autoPriority);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -166,6 +145,8 @@ class AdminDashboardScreen extends StatelessWidget {
             fontWeight: FontWeight.bold,
             fontSize: 15,
           ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -177,47 +158,23 @@ class AdminDashboardScreen extends StatelessWidget {
               style: const TextStyle(fontSize: 12),
             ),
             const SizedBox(height: 6),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 3,
-                  ),
-                  decoration: BoxDecoration(
-                    color: statusColor.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    report.status,
-                    style: TextStyle(
-                      color: statusColor,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 8,
+                vertical: 3,
+              ),
+              decoration: BoxDecoration(
+                color: statusColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                report.status,
+                style: TextStyle(
+                  color: statusColor,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 3,
-                  ),
-                  decoration: BoxDecoration(
-                    color: priorityColor.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    autoPriority,
-                    style: TextStyle(
-                      color: priorityColor,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-              ],
+              ),
             ),
           ],
         ),
@@ -246,7 +203,7 @@ class AdminDashboardScreen extends StatelessWidget {
     final FirestoreService firestoreService = FirestoreService();
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F9FC),
+      backgroundColor: const Color(0xFFEFF6FF),
       appBar: AppBar(
         title: const Text(
           'Admin Panel',
@@ -277,6 +234,8 @@ class AdminDashboardScreen extends StatelessWidget {
           }
 
           final allReports = snapshot.data ?? [];
+          final recentReports = allReports.toList()
+  ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
           return ListView(
             key: const PageStorageKey('admin_dashboard_scroll'),
@@ -300,6 +259,7 @@ class AdminDashboardScreen extends StatelessWidget {
               _DashboardSummarySection(
                 reports: allReports,
                 onNavigateToReports: onNavigateToReports,
+                onNavigateToReportsByArea: onNavigateToReportsByArea,
               ),
               const SizedBox(height: 24),
               _SubmissionTrendSection(
@@ -350,18 +310,17 @@ class AdminDashboardScreen extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 12),
-              if (allReports.isEmpty)
-                const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(20),
-                    child: Text('No reports available'),
-                  ),
-                )
-              else
-                ...allReports.take(3).map(
-                      (report) =>
-                          _buildRecentReportItem(context, report, allReports),
-                    ),
+              if (recentReports.isEmpty)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(20),
+                  child: Text('No reports available'),
+                ),
+              )
+            else
+              ...recentReports
+                  .take(3)
+                  .map((report) => _buildRecentReportItem(context, report)),
             ],
           );
         },
@@ -373,10 +332,12 @@ class AdminDashboardScreen extends StatelessWidget {
 class _DashboardSummarySection extends StatefulWidget {
   final List<WasteReport> reports;
   final Function(String filter) onNavigateToReports;
+  final Function(String area) onNavigateToReportsByArea;
 
   const _DashboardSummarySection({
     required this.reports,
     required this.onNavigateToReports,
+    required this.onNavigateToReportsByArea,
   });
 
   @override
@@ -387,6 +348,14 @@ class _DashboardSummarySection extends StatefulWidget {
 class _DashboardSummarySectionState extends State<_DashboardSummarySection>
     with AutomaticKeepAliveClientMixin {
   String _selectedRange = 'Overall';
+  String _selectedHotspotPriority = 'All';
+
+  final List<String> _hotspotPriorityFilters = [
+    'All',
+    'High',
+    'Medium',
+    'Low',
+  ];
 
   @override
   bool get wantKeepAlive => true;
@@ -396,9 +365,11 @@ class _DashboardSummarySectionState extends State<_DashboardSummarySection>
 
     if (_selectedRange == 'Last 7 Days') {
       final last7Days = now.subtract(const Duration(days: 7));
-      return reports
-          .where((r) => r.createdAt.toDate().isAfter(last7Days))
-          .toList();
+
+      return reports.where((r) {
+        final createdAt = r.createdAt.toDate();
+        return createdAt.isAfter(last7Days);
+      }).toList();
     }
 
     if (_selectedRange == 'This Month') {
@@ -416,28 +387,19 @@ class _DashboardSummarySectionState extends State<_DashboardSummarySection>
 
     for (final report in reports) {
       final area = report.area.trim();
+
       if (area.isEmpty) continue;
+
       areaCounts[area] = (areaCounts[area] ?? 0) + 1;
     }
 
     return areaCounts;
   }
 
-  List<MapEntry<String, int>> _getTopAreas(List<WasteReport> reports) {
-    final areaCounts = _getAreaCounts(reports).entries.toList();
-    areaCounts.sort((a, b) => b.value.compareTo(a.value));
-    return areaCounts.take(5).toList();
-  }
-
   String _autoPriorityFromCount(int count) {
     if (count >= 3) return 'High';
     if (count == 2) return 'Medium';
     return 'Low';
-  }
-
-  int _countAutoHighPriorityAreas(List<WasteReport> reports) {
-    final areaCounts = _getAreaCounts(reports);
-    return areaCounts.values.where((count) => count >= 3).length;
   }
 
   Color _getPriorityColor(String priority) {
@@ -449,8 +411,162 @@ class _DashboardSummarySectionState extends State<_DashboardSummarySection>
       case 'Low':
         return Colors.green;
       default:
-        return Colors.grey;
+        return Colors.blueGrey;
     }
+  }
+
+  IconData _getPriorityIcon(String priority) {
+    switch (priority) {
+      case 'High':
+        return Icons.priority_high_rounded;
+      case 'Medium':
+        return Icons.warning_amber_rounded;
+      case 'Low':
+        return Icons.eco_rounded;
+      default:
+        return Icons.location_on_outlined;
+    }
+  }
+
+  int _countHotspotAreasByPriority(
+    List<WasteReport> reports,
+    String priority,
+  ) {
+    final areaCounts = _getAreaCounts(reports);
+
+    if (priority == 'All') {
+      return areaCounts.length;
+    }
+
+    return areaCounts.values.where((count) {
+      return _autoPriorityFromCount(count) == priority;
+    }).length;
+  }
+
+  List<MapEntry<String, int>> _getFilteredHotspotAreas(
+    List<WasteReport> reports,
+  ) {
+    final areaCounts = _getAreaCounts(reports).entries.toList();
+
+    areaCounts.sort((a, b) => b.value.compareTo(a.value));
+
+    if (_selectedHotspotPriority == 'All') {
+      return areaCounts.take(5).toList();
+    }
+
+    return areaCounts.where((entry) {
+      final priority = _autoPriorityFromCount(entry.value);
+      return priority == _selectedHotspotPriority;
+    }).take(5).toList();
+  }
+
+  String _rangeLabel() {
+    switch (_selectedRange) {
+      case 'Last 7 Days':
+        return 'in the last 7 days';
+      case 'This Month':
+        return 'this month';
+      default:
+        return 'overall';
+    }
+  }
+
+  Widget _buildOverviewFilterCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: Colors.blue.shade50,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.blue.shade100),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(9),
+            decoration: BoxDecoration(
+              color: Colors.blue.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(
+              Icons.filter_alt_rounded,
+              color: Colors.blue,
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Overview Filter',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 14,
+                    color: Colors.black87,
+                  ),
+                ),
+                SizedBox(height: 2),
+                Text(
+                  'Filter dashboard data by time range',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.black54,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.blue.shade100),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: _selectedRange,
+                icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                borderRadius: BorderRadius.circular(14),
+                items: const [
+                  DropdownMenuItem(
+                    value: 'Overall',
+                    child: Text('Overall'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'Last 7 Days',
+                    child: Text('Last 7 Days'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'This Month',
+                    child: Text('This Month'),
+                  ),
+                ],
+                onChanged: (value) {
+                  if (value != null) {
+                    setState(() {
+                      _selectedRange = value;
+                      _selectedHotspotPriority = 'All';
+                    });
+                  }
+                },
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildStatCard({
@@ -513,7 +629,11 @@ class _DashboardSummarySectionState extends State<_DashboardSummarySection>
     );
   }
 
-  Widget _buildPriorityInsightCard(int highPriorityAreas) {
+  Widget _buildHotspotSummaryCard(List<WasteReport> reports) {
+    final highCount = _countHotspotAreasByPriority(reports, 'High');
+    final mediumCount = _countHotspotAreasByPriority(reports, 'Medium');
+    final lowCount = _countHotspotAreasByPriority(reports, 'Low');
+
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -536,16 +656,14 @@ class _DashboardSummarySectionState extends State<_DashboardSummarySection>
               borderRadius: BorderRadius.circular(14),
             ),
             child: const Icon(
-              Icons.priority_high_rounded,
+              Icons.location_on_rounded,
               color: Colors.red,
             ),
           ),
           const SizedBox(width: 14),
           Expanded(
             child: Text(
-              highPriorityAreas == 0
-                  ? 'No hotspot area is marked as high priority right now'
-                  : '$highPriorityAreas hotspot area(s) are automatically marked as high priority',
+              'Hotspot Summary ${_rangeLabel()}: $highCount High, $mediumCount Medium, $lowCount Low area(s)',
               style: const TextStyle(
                 fontWeight: FontWeight.w700,
                 fontSize: 14,
@@ -557,7 +675,51 @@ class _DashboardSummarySectionState extends State<_DashboardSummarySection>
     );
   }
 
-  Widget _buildTopAreasCard(List<MapEntry<String, int>> topAreas) {
+  Widget _buildHotspotPriorityFilter() {
+    return SizedBox(
+      height: 45,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        itemCount: _hotspotPriorityFilters.length,
+        itemBuilder: (context, index) {
+          final filter = _hotspotPriorityFilters[index];
+          final isSelected = _selectedHotspotPriority == filter;
+          final color =
+              filter == 'All' ? Colors.blueGrey : _getPriorityColor(filter);
+
+          return Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: ChoiceChip(
+              label: Text(filter),
+              selected: isSelected,
+              onSelected: (_) {
+                setState(() {
+                  _selectedHotspotPriority = filter;
+                });
+              },
+              selectedColor: color,
+              backgroundColor: Colors.grey.shade50,
+              showCheckmark: false,
+              labelStyle: TextStyle(
+                color: isSelected ? Colors.white : color,
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+                side: BorderSide(
+                  color:
+                      isSelected ? Colors.transparent : color.withOpacity(0.4),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildHotspotAreasCard(List<MapEntry<String, int>> hotspotAreas) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
@@ -576,77 +738,134 @@ class _DashboardSummarySectionState extends State<_DashboardSummarySection>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Top Areas',
+            'Hotspot Areas',
             style: TextStyle(
               fontWeight: FontWeight.bold,
               fontSize: 16,
             ),
           ),
+          const SizedBox(height: 6),
+          Text(
+            'Tap an area to view matching reports. Priority is calculated from repeated reports by area ${_rangeLabel()}.',
+            style: TextStyle(
+              color: Colors.grey.shade600,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 14),
+          _buildHotspotPriorityFilter(),
           const SizedBox(height: 16),
-          if (topAreas.isEmpty)
-            Text(
-              'No area data available',
-              style: TextStyle(color: Colors.grey.shade600),
+          if (hotspotAreas.isEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Text(
+                _selectedHotspotPriority == 'All'
+                    ? 'No hotspot area data available.'
+                    : 'No $_selectedHotspotPriority hotspot areas found.',
+                style: TextStyle(
+                  color: Colors.grey.shade600,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             )
           else
-            ...topAreas.map((entry) {
+            ...hotspotAreas.map((entry) {
               final priority = _autoPriorityFromCount(entry.value);
               final priorityColor = _getPriorityColor(priority);
+              final priorityIcon = _getPriorityIcon(priority);
 
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        entry.key,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14,
-                        ),
-                      ),
+              return InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: () {
+                  widget.onNavigateToReportsByArea(entry.key);
+                },
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: priorityColor.withOpacity(0.05),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: priorityColor.withOpacity(0.15),
                     ),
-                    const SizedBox(width: 10),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 5,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.blue.withOpacity(0.08),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        '${entry.value} report(s)',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 11,
-                          color: Colors.blue,
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(9),
+                        decoration: BoxDecoration(
+                          color: priorityColor.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 5,
-                      ),
-                      decoration: BoxDecoration(
-                        color: priorityColor.withOpacity(0.12),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        priority,
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 11,
+                        child: Icon(
+                          priorityIcon,
                           color: priorityColor,
+                          size: 20,
                         ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          entry.key,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 9,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '${entry.value} report(s)',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 11,
+                            color: Colors.blue,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 9,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: priorityColor.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          priority,
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 11,
+                            color: priorityColor,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Icon(
+                        Icons.chevron_right_rounded,
+                        color: Colors.grey.shade500,
+                      ),
+                    ],
+                  ),
                 ),
               );
             }),
@@ -660,55 +879,18 @@ class _DashboardSummarySectionState extends State<_DashboardSummarySection>
     super.build(context);
 
     final reports = _filterReportsByRange(widget.reports);
+
     final total = reports.length;
     final pending = reports.where((r) => r.status == 'Pending').length;
     final inProgress = reports.where((r) => r.status == 'In Progress').length;
     final resolved = reports.where((r) => r.status == 'Resolved').length;
-    final autoHighPriorityAreas = _countAutoHighPriorityAreas(reports);
-    final topAreas = _getTopAreas(reports);
+
+    final hotspotAreas = _getFilteredHotspotAreas(reports);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Align(
-          alignment: Alignment.centerRight,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: Colors.grey.shade200),
-            ),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                value: _selectedRange,
-                icon: const Icon(Icons.keyboard_arrow_down_rounded),
-                borderRadius: BorderRadius.circular(14),
-                items: const [
-                  DropdownMenuItem(
-                    value: 'Overall',
-                    child: Text('Overall'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'Last 7 Days',
-                    child: Text('Last 7 Days'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'This Month',
-                    child: Text('This Month'),
-                  ),
-                ],
-                onChanged: (value) {
-                  if (value != null) {
-                    setState(() {
-                      _selectedRange = value;
-                    });
-                  }
-                },
-              ),
-            ),
-          ),
-        ),
+        _buildOverviewFilterCard(),
         const SizedBox(height: 18),
         GridView.count(
           crossAxisCount: 2,
@@ -750,9 +932,9 @@ class _DashboardSummarySectionState extends State<_DashboardSummarySection>
           ],
         ),
         const SizedBox(height: 16),
-        _buildPriorityInsightCard(autoHighPriorityAreas),
+        _buildHotspotSummaryCard(reports),
         const SizedBox(height: 20),
-        _buildTopAreasCard(topAreas),
+        _buildHotspotAreasCard(hotspotAreas),
       ],
     );
   }
@@ -781,9 +963,10 @@ class _SubmissionTrendSectionState extends State<_SubmissionTrendSection>
 
     if (_selectedChartRange == 'Last 7 Days') {
       final last7Days = now.subtract(const Duration(days: 7));
-      return reports
-          .where((r) => r.createdAt.toDate().isAfter(last7Days))
-          .toList();
+      return reports.where((r) {
+        final createdAt = r.createdAt.toDate();
+        return createdAt.isAfter(last7Days);
+      }).toList();
     }
 
     if (_selectedChartRange == 'This Month') {
@@ -805,6 +988,7 @@ class _SubmissionTrendSectionState extends State<_SubmissionTrendSection>
         final weekOfMonth = ((date.day - 1) ~/ 7) + 1;
         weekCounts[weekOfMonth] = (weekCounts[weekOfMonth] ?? 0) + 1;
       }
+
       return weekCounts;
     }
 
@@ -936,6 +1120,7 @@ class _SubmissionTrendSectionState extends State<_SubmissionTrendSection>
                         if (_selectedChartRange == 'This Month') {
                           const weeks = ['W1', 'W2', 'W3', 'W4', 'W5'];
                           final index = value.toInt() - 1;
+
                           if (index >= 0 && index < weeks.length) {
                             return Padding(
                               padding: const EdgeInsets.only(top: 8.0),
@@ -949,6 +1134,7 @@ class _SubmissionTrendSectionState extends State<_SubmissionTrendSection>
                               ),
                             );
                           }
+
                           return const SizedBox.shrink();
                         } else {
                           const days = [
@@ -958,12 +1144,19 @@ class _SubmissionTrendSectionState extends State<_SubmissionTrendSection>
                             'Wed',
                             'Thu',
                             'Fri',
-                            'Sat'
+                            'Sat',
                           ];
+
+                          final index = value.toInt();
+
+                          if (index < 0 || index >= days.length) {
+                            return const SizedBox.shrink();
+                          }
+
                           return Padding(
                             padding: const EdgeInsets.only(top: 8.0),
                             child: Text(
-                              days[value.toInt()],
+                              days[index],
                               style: const TextStyle(
                                 fontSize: 10,
                                 color: Colors.grey,
@@ -1006,6 +1199,7 @@ class _SubmissionTrendSectionState extends State<_SubmissionTrendSection>
   @override
   Widget build(BuildContext context) {
     super.build(context);
+
     return _buildTrendChart(widget.reports);
   }
 }

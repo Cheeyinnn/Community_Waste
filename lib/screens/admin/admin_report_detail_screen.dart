@@ -2,15 +2,18 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
+
 import '../../models/waste_report.dart';
 import '../../services/firestore_service.dart';
 
 class AdminReportDetailScreen extends StatefulWidget {
   final WasteReport report;
+  final String? initialPriorityOverride;
 
   const AdminReportDetailScreen({
     super.key,
     required this.report,
+    this.initialPriorityOverride,
   });
 
   @override
@@ -24,6 +27,7 @@ class _AdminReportDetailScreenState extends State<AdminReportDetailScreen> {
 
   late String _selectedStatus;
   late String _selectedPriority;
+
   bool _isUpdating = false;
   String? _selectedCollectorId;
   String? _selectedCollectorName;
@@ -43,8 +47,9 @@ class _AdminReportDetailScreenState extends State<AdminReportDetailScreen> {
   @override
   void initState() {
     super.initState();
+
     _selectedStatus = widget.report.status;
-    _selectedPriority = widget.report.priority;
+    _selectedPriority = widget.initialPriorityOverride ?? widget.report.priority;
     _adminRemarkController.text = widget.report.adminRemark;
 
     if (widget.report.collectorId.isNotEmpty) {
@@ -57,6 +62,15 @@ class _AdminReportDetailScreenState extends State<AdminReportDetailScreen> {
   void dispose() {
     _adminRemarkController.dispose();
     super.dispose();
+  }
+
+  void _goBack() {
+    Navigator.pop(context);
+  }
+
+  Future<bool> _onWillPop() async {
+    _goBack();
+    return false;
   }
 
   Color _getStatusColor(String status) {
@@ -101,7 +115,9 @@ class _AdminReportDetailScreenState extends State<AdminReportDetailScreen> {
       return;
     }
 
-    setState(() => _isUpdating = true);
+    setState(() {
+      _isUpdating = true;
+    });
 
     try {
       if (_selectedStatus == 'Rejected') {
@@ -130,14 +146,18 @@ class _AdminReportDetailScreenState extends State<AdminReportDetailScreen> {
         );
       }
 
-      if (mounted) {
-        Navigator.pop(context, true);
-      }
+      if (!mounted) return;
+
+      // true means previous admin page should refresh.
+      Navigator.pop(context, true);
     } catch (e) {
+      if (!mounted) return;
       _showError('Update failed: $e');
     } finally {
       if (mounted) {
-        setState(() => _isUpdating = false);
+        setState(() {
+          _isUpdating = false;
+        });
       }
     }
   }
@@ -153,8 +173,9 @@ class _AdminReportDetailScreenState extends State<AdminReportDetailScreen> {
 
   Future<void> _openMap() async {
     final String query = Uri.encodeComponent(widget.report.location);
-    final Uri googleMapsUrl =
-        Uri.parse("https://www.google.com/maps/search/?api=1&query=$query");
+    final Uri googleMapsUrl = Uri.parse(
+      "https://www.google.com/maps/search/?api=1&query=$query",
+    );
 
     if (await canLaunchUrl(googleMapsUrl)) {
       await launchUrl(
@@ -172,34 +193,41 @@ class _AdminReportDetailScreenState extends State<AdminReportDetailScreen> {
     final currentStatusColor = _getStatusColor(_selectedStatus);
     final currentPriorityColor = _getPriorityColor(_selectedPriority);
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF7F9FC),
-      appBar: AppBar(
-        title: const Text(
-          "Report Details",
-          style: TextStyle(fontWeight: FontWeight.bold),
+    return WillPopScope(
+      onWillPop: _onWillPop,
+      child: Scaffold(
+        backgroundColor: const Color(0xFFEFF6FF),
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new),
+            onPressed: _goBack,
+          ),
+          title: const Text(
+            "Report Details",
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          centerTitle: true,
+          foregroundColor: Colors.black87,
         ),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        centerTitle: true,
-        foregroundColor: Colors.black87,
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 120),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildSectionTitle("Evidence"),
-            _buildImageContainer(widget.report.imageUrl),
-            const SizedBox(height: 24),
-            _buildInfoCard(),
-            const SizedBox(height: 24),
-            _buildSectionTitle("Admin Actions"),
-            _buildActionCard(currentStatusColor, currentPriorityColor),
-          ],
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 120),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildSectionTitle("Evidence"),
+              _buildImageContainer(widget.report.imageUrl),
+              const SizedBox(height: 24),
+              _buildInfoCard(),
+              const SizedBox(height: 24),
+              _buildSectionTitle("Admin Actions"),
+              _buildActionCard(currentStatusColor, currentPriorityColor),
+            ],
+          ),
         ),
+        bottomSheet: _buildBottomActionBar(),
       ),
-      bottomSheet: _buildBottomActionBar(),
     );
   }
 
@@ -271,8 +299,13 @@ class _AdminReportDetailScreenState extends State<AdminReportDetailScreen> {
         children: [
           _infoRow(Icons.title, "Title", widget.report.title),
           _infoRow(Icons.eco_outlined, "Type", widget.report.wasteType),
-          _infoRow(Icons.description_outlined, "Description",
-              widget.report.description.isEmpty ? '-' : widget.report.description),
+          _infoRow(
+            Icons.description_outlined,
+            "Description",
+            widget.report.description.isEmpty
+                ? '-'
+                : widget.report.description,
+          ),
           Padding(
             padding: const EdgeInsets.only(bottom: 12),
             child: Row(
@@ -316,8 +349,9 @@ class _AdminReportDetailScreenState extends State<AdminReportDetailScreen> {
           _infoRow(
             Icons.calendar_today_outlined,
             "Date",
-            DateFormat('dd MMM yyyy, hh:mm a')
-                .format(widget.report.createdAt.toDate()),
+            DateFormat('dd MMM yyyy, hh:mm a').format(
+              widget.report.createdAt.toDate(),
+            ),
           ),
           _infoRow(
             Icons.assignment_ind_outlined,
@@ -362,7 +396,10 @@ class _AdminReportDetailScreenState extends State<AdminReportDetailScreen> {
     );
   }
 
-  Widget _buildActionCard(Color currentStatusColor, Color currentPriorityColor) {
+  Widget _buildActionCard(
+    Color currentStatusColor,
+    Color currentPriorityColor,
+  ) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -391,12 +428,18 @@ class _AdminReportDetailScreenState extends State<AdminReportDetailScreen> {
                 color: currentStatusColor,
               ),
             ),
-            items: _statusOptions
-                .map((s) => DropdownMenuItem(value: s, child: Text(s)))
-                .toList(),
+            items: _statusOptions.map((s) {
+              return DropdownMenuItem(
+                value: s,
+                child: Text(s),
+              );
+            }).toList(),
             onChanged: (val) {
               if (val == null) return;
-              setState(() => _selectedStatus = val);
+
+              setState(() {
+                _selectedStatus = val;
+              });
             },
           ),
           const SizedBox(height: 16),
@@ -414,12 +457,18 @@ class _AdminReportDetailScreenState extends State<AdminReportDetailScreen> {
                 color: currentPriorityColor,
               ),
             ),
-            items: _priorityOptions
-                .map((p) => DropdownMenuItem(value: p, child: Text(p)))
-                .toList(),
+            items: _priorityOptions.map((p) {
+              return DropdownMenuItem(
+                value: p,
+                child: Text(p),
+              );
+            }).toList(),
             onChanged: (val) {
               if (val == null) return;
-              setState(() => _selectedPriority = val);
+
+              setState(() {
+                _selectedPriority = val;
+              });
             },
           ),
           const SizedBox(height: 16),
@@ -437,8 +486,10 @@ class _AdminReportDetailScreenState extends State<AdminReportDetailScreen> {
 
               final docs = snapshot.data?.docs ?? [];
 
-              bool isValidCollector =
-                  docs.any((doc) => doc.id == _selectedCollectorId);
+              final bool isValidCollector = docs.any(
+                (doc) => doc.id == _selectedCollectorId,
+              );
+
               if (!isValidCollector) {
                 _selectedCollectorId = null;
               }
@@ -464,12 +515,14 @@ class _AdminReportDetailScreenState extends State<AdminReportDetailScreen> {
                 }).toList(),
                 onChanged: (val) {
                   if (val == null) return;
+
                   final matchedDoc = docs.firstWhere((d) => d.id == val);
                   final name = matchedDoc.data()['name'] ?? 'Unknown';
 
                   setState(() {
                     _selectedCollectorId = val;
                     _selectedCollectorName = name;
+
                     if (_selectedStatus == 'Pending') {
                       _selectedStatus = 'Assigned';
                     }
@@ -490,7 +543,10 @@ class _AdminReportDetailScreenState extends State<AdminReportDetailScreen> {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: Colors.blue, width: 2),
+                borderSide: const BorderSide(
+                  color: Colors.blue,
+                  width: 2,
+                ),
               ),
             ),
           ),
@@ -504,7 +560,9 @@ class _AdminReportDetailScreenState extends State<AdminReportDetailScreen> {
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+        borderRadius: const BorderRadius.vertical(
+          top: Radius.circular(30),
+        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.05),

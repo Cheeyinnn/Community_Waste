@@ -199,13 +199,15 @@ class _CollectorDashboardScreenState extends State<CollectorDashboardScreen> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'You have $pendingTasks tasks pending today. Let’s keep the community clean!',
-                          style: TextStyle(
-                            color: Colors.white.withOpacity(0.9),
-                            fontSize: 14,
-                            height: 1.4,
-                          ),
+                        pendingTasks == 0
+                            ? 'You have no active task right now. Great work keeping the community clean!'
+                            : 'You have $pendingTasks active task(s) to complete. Let’s keep the community clean!',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.9),
+                          fontSize: 14,
+                          height: 1.4,
                         ),
+                      ),
                       ],
                     ),
                   ),

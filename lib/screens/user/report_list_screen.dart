@@ -68,6 +68,10 @@ class _ReportListScreenState extends State<ReportListScreen> {
     super.dispose();
   }
 
+  void _goBackHome() {
+    widget.onBack?.call();
+  }
+
   void _scrollToSelectedFilter() {
     if (!_filterScrollController.hasClients) return;
 
@@ -110,19 +114,6 @@ class _ReportListScreenState extends State<ReportListScreen> {
     }
   }
 
-  Color _priorityColor(String priority) {
-    switch (priority) {
-      case 'High':
-        return Colors.red;
-      case 'Medium':
-        return Colors.orange;
-      case 'Low':
-        return Colors.green;
-      default:
-        return Colors.grey;
-    }
-  }
-
   String _formatDate(dynamic timestamp) {
     try {
       final date = timestamp.toDate();
@@ -151,9 +142,7 @@ class _ReportListScreenState extends State<ReportListScreen> {
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new),
-          onPressed: () {
-            widget.onBack?.call();
-          },
+          onPressed: _goBackHome,
         ),
         title: const Text(
           'My Reports',
@@ -333,7 +322,6 @@ class _ReportListScreenState extends State<ReportListScreen> {
 
   Widget _buildReportCard(BuildContext context, WasteReport report) {
     final statusColor = _statusColor(report.status);
-    final priorityColor = _priorityColor(report.priority);
 
     return Container(
       decoration: BoxDecoration(
@@ -349,13 +337,16 @@ class _ReportListScreenState extends State<ReportListScreen> {
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(20),
-        onTap: () {
+        onTap: () async {
           Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => ReportDetailScreen(report: report),
-            ),
-          );
+        context,
+        MaterialPageRoute(
+          builder: (_) => ReportDetailScreen(
+            report: report,
+            isAdmin: false,
+          ),
+        ),
+      );
         },
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -404,8 +395,11 @@ class _ReportListScreenState extends State<ReportListScreen> {
                     const SizedBox(height: 6),
                     Row(
                       children: [
-                        const Icon(Icons.location_on,
-                            size: 14, color: Colors.grey),
+                        const Icon(
+                          Icons.location_on,
+                          size: 14,
+                          color: Colors.grey,
+                        ),
                         const SizedBox(width: 4),
                         Expanded(
                           child: Text(
@@ -420,8 +414,11 @@ class _ReportListScreenState extends State<ReportListScreen> {
                     const SizedBox(height: 4),
                     Row(
                       children: [
-                        const Icon(Icons.calendar_today,
-                            size: 13, color: Colors.grey),
+                        const Icon(
+                          Icons.calendar_today,
+                          size: 13,
+                          color: Colors.grey,
+                        ),
                         const SizedBox(width: 5),
                         Text(
                           _formatDate(report.createdAt),
@@ -448,25 +445,6 @@ class _ReportListScreenState extends State<ReportListScreen> {
                             report.status,
                             style: TextStyle(
                               color: statusColor,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: priorityColor.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            report.priority,
-                            style: TextStyle(
-                              color: priorityColor,
                               fontWeight: FontWeight.bold,
                               fontSize: 12,
                             ),

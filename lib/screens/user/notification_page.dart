@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 import '../../models/waste_report.dart';
 import '../../services/firestore_service.dart';
 import 'report_detail_screen.dart';
@@ -18,9 +19,12 @@ class _NotificationPageState extends State<NotificationPage> {
   bool _markedAsRead = false;
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _markNotificationsAsReadOnce();
+  void initState() {
+    super.initState();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _markNotificationsAsReadOnce();
+    });
   }
 
   Future<void> _markNotificationsAsReadOnce() async {
@@ -30,6 +34,7 @@ class _NotificationPageState extends State<NotificationPage> {
     if (user == null) return;
 
     final prefs = await SharedPreferences.getInstance();
+
     await prefs.setString(
       'last_notification_read_${user.uid}',
       DateTime.now().toIso8601String(),
@@ -38,52 +43,101 @@ class _NotificationPageState extends State<NotificationPage> {
     _markedAsRead = true;
   }
 
+  void _goBackToHome() {
+    if (Navigator.canPop(context)) {
+      Navigator.pop(context);
+    }
+  }
+
+  void _openReportDetail(WasteReport report) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ReportDetailScreen(
+          report: report,
+          isAdmin: false,
+        ),
+      ),
+    );
+  }
+
+  Future<bool> _onWillPop() async {
+    _goBackToHome();
+    return false;
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF7F9FC),
-      appBar: AppBar(
-        title: const Text(
-          "Notifications",
-          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 22),
-        ),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        centerTitle: true,
-        foregroundColor: Colors.black87,
-      ),
-      body: user == null
-          ? const Center(child: Text("Please log in to see updates"))
-          : StreamBuilder<List<WasteReport>>(
-              stream: firestoreService.getUserReports(user.uid),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(
-                    child: CircularProgressIndicator(color: Colors.green),
-                  );
-                }
-
-                final reports = snapshot.data ?? [];
-
-                final updates = reports.where((r) => r.status != 'Pending').toList()
-                  ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-
-                if (updates.isEmpty) {
-                  return _buildEmptyState();
-                }
-
-                return ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(20, 10, 20, 100),
-                  physics: const ClampingScrollPhysics(),
-                  itemCount: updates.length,
-                  itemBuilder: (context, index) {
-                    return _buildNotificationCard(context, updates[index]);
-                  },
-                );
-              },
+    return WillPopScope(
+      onWillPop: _onWillPop,
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF7F9FC),
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new),
+            onPressed: _goBackToHome,
+          ),
+          title: const Text(
+            "Notifications",
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              fontSize: 22,
             ),
+          ),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          centerTitle: true,
+          foregroundColor: Colors.black87,
+        ),
+        body: user == null
+            ? const Center(
+                child: Text("Please log in to see updates"),
+              )
+            : StreamBuilder<List<WasteReport>>(
+                stream: firestoreService.getUserReports(user.uid),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(
+                      child: CircularProgressIndicator(color: Colors.green),
+                    );
+                  }
+
+                  if (snapshot.hasError) {
+                    return Center(
+                      child: Text(
+                        'Error: ${snapshot.error}',
+                        style: const TextStyle(color: Colors.red),
+                      ),
+                    );
+                  }
+
+                  final reports = snapshot.data ?? [];
+
+                  final updates = reports
+                      .where((r) => r.status != 'Pending')
+                      .toList()
+                    ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+
+                  if (updates.isEmpty) {
+                    return _buildEmptyState();
+                  }
+
+                  return ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(20, 10, 20, 100),
+                    physics: const ClampingScrollPhysics(),
+                    itemCount: updates.length,
+                    itemBuilder: (context, index) {
+                      return _buildNotificationCard(
+                        context,
+                        updates[index],
+                      );
+                    },
+                  );
+                },
+              ),
+      ),
     );
   }
 
@@ -115,9 +169,18 @@ class _NotificationPageState extends State<NotificationPage> {
         break;
       default:
         message = "There is an update on your report.";
+        break;
     }
 
-    final dateString = DateFormat('MMM d, h:mm a').format(report.updatedAt.toDate());
+    String dateString = "-";
+
+    try {
+      dateString = DateFormat('MMM d, h:mm a').format(
+        report.updatedAt.toDate(),
+      );
+    } catch (e) {
+      dateString = "-";
+    }
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -137,14 +200,7 @@ class _NotificationPageState extends State<NotificationPage> {
         child: Material(
           color: Colors.transparent,
           child: InkWell(
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => ReportDetailScreen(report: report),
-                ),
-              );
-            },
+            onTap: () => _openReportDetail(report),
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Row(
@@ -156,7 +212,11 @@ class _NotificationPageState extends State<NotificationPage> {
                       color: themeColor.withOpacity(0.1),
                       shape: BoxShape.circle,
                     ),
-                    child: Icon(iconData, color: themeColor, size: 24),
+                    child: Icon(
+                      iconData,
+                      color: themeColor,
+                      size: 24,
+                    ),
                   ),
                   const SizedBox(width: 16),
                   Expanded(
@@ -236,7 +296,9 @@ class _NotificationPageState extends State<NotificationPage> {
           Text(
             "You'll get notified when your\nreports are updated.",
             textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.grey.shade500),
+            style: TextStyle(
+              color: Colors.grey.shade500,
+            ),
           ),
         ],
       ),

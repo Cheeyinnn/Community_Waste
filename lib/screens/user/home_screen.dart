@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 import '../../models/waste_report.dart';
 import '../../services/auth_service.dart';
 import '../../services/firestore_service.dart';
@@ -63,10 +64,11 @@ class _HomeScreenState extends State<HomeScreen>
     final user = FirebaseAuth.instance.currentUser;
 
     final String userName = user?.displayName?.trim().isNotEmpty == true
-        ? user!.displayName!
+        ? user!.displayName!.trim()
         : user?.email?.split('@').first ?? 'User';
 
     final String userId = user?.uid ?? '';
+    final String photoUrl = user?.photoURL ?? '';
 
     if (userId.isEmpty) {
       return const Scaffold(
@@ -122,10 +124,10 @@ class _HomeScreenState extends State<HomeScreen>
                   const SizedBox(height: 24),
                   _buildHeroCard(
                     userName,
+                    photoUrl: photoUrl,
                     onTap: widget.onCreateReport,
                   ),
                   const SizedBox(height: 28),
-
                   const Text(
                     'Overview',
                     style: TextStyle(
@@ -135,7 +137,6 @@ class _HomeScreenState extends State<HomeScreen>
                     ),
                   ),
                   const SizedBox(height: 14),
-
                   Row(
                     children: [
                       Expanded(
@@ -204,16 +205,12 @@ class _HomeScreenState extends State<HomeScreen>
                       ),
                     ],
                   ),
-
                   const SizedBox(height: 28),
-
                   _ContributionSection(
                     userId: userId,
                     firestoreService: firestoreService,
                   ),
-
                   const SizedBox(height: 28),
-
                   const Text(
                     'Latest Reports',
                     style: TextStyle(
@@ -223,7 +220,6 @@ class _HomeScreenState extends State<HomeScreen>
                     ),
                   ),
                   const SizedBox(height: 14),
-
                   StreamBuilder<List<WasteReport>>(
                     stream: firestoreService.getRecentUserReports(userId),
                     builder: (context, snapshot) {
@@ -283,6 +279,7 @@ class _HomeScreenState extends State<HomeScreen>
         Container(
           width: 52,
           height: 52,
+          padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
@@ -294,10 +291,16 @@ class _HomeScreenState extends State<HomeScreen>
               ),
             ],
           ),
-          child: const Icon(
-            Icons.eco_rounded,
-            color: Color(0xFF35C76F),
-            size: 28,
+          child: Image.asset(
+            'assets/icon/logo.png',
+            fit: BoxFit.contain,
+            errorBuilder: (context, error, stackTrace) {
+              return const Icon(
+                Icons.eco_rounded,
+                color: Color(0xFF35C76F),
+                size: 28,
+              );
+            },
           ),
         ),
         const Spacer(),
@@ -411,7 +414,11 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  Widget _buildHeroCard(String userName, {required VoidCallback onTap}) {
+  Widget _buildHeroCard(
+    String userName, {
+    required String photoUrl,
+    required VoidCallback onTap,
+  }) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(22),
@@ -442,11 +449,29 @@ class _HomeScreenState extends State<HomeScreen>
             decoration: BoxDecoration(
               color: Colors.white.withOpacity(0.22),
               shape: BoxShape.circle,
+              border: Border.all(
+                color: Colors.white.withOpacity(0.35),
+                width: 2,
+              ),
             ),
-            child: const Icon(
-              Icons.person_rounded,
-              color: Colors.white,
-              size: 34,
+            child: ClipOval(
+              child: photoUrl.isNotEmpty
+                  ? Image.network(
+                      photoUrl,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) {
+                        return const Icon(
+                          Icons.person_rounded,
+                          color: Colors.white,
+                          size: 34,
+                        );
+                      },
+                    )
+                  : const Icon(
+                      Icons.person_rounded,
+                      color: Colors.white,
+                      size: 34,
+                    ),
             ),
           ),
           const SizedBox(width: 16),
@@ -981,43 +1006,53 @@ class _ContributionSectionState extends State<_ContributionSection>
   }
 
   Widget _buildMiniContributionStat({
-    required String title,
-    required String value,
-    required Color color,
-    required IconData icon,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: color, size: 20),
-          const SizedBox(height: 10),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
-              color: Colors.black87,
+  required String title,
+  required String value,
+  required Color color,
+  required IconData icon,
+}) {
+  return Container(
+    height: 145,
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
+    decoration: BoxDecoration(
+      color: color.withOpacity(0.08),
+      borderRadius: BorderRadius.circular(18),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Icon(icon, color: color, size: 22),
+        const SizedBox(height: 12),
+        Text(
+          value,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.w800,
+            color: Colors.black87,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Expanded(
+          child: Center(
+            child: Text(
+              title,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 11,
+                height: 1.15,
+                color: Colors.grey.shade700,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
-          const SizedBox(height: 2),
-          Text(
-            title,
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey.shade700,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+        ),
+      ],
+    ),
+  );
+}
 
   Widget _buildEmptyCard({required String text}) {
     return Container(

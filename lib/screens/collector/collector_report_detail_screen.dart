@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
+
 import '../../models/waste_report.dart';
 import '../../services/firestore_service.dart';
 import '../../services/storage_service.dart';
@@ -25,6 +26,15 @@ class _CollectorReportDetailScreenState
   final FirestoreService _firestoreService = FirestoreService();
   final StorageService _storageService = StorageService();
 
+  void _goBackToTaskList() {
+    Navigator.pop(context);
+  }
+
+  Future<bool> _onWillPop() async {
+    _goBackToTaskList();
+    return false;
+  }
+
   Color _statusColor(String status) {
     switch (status) {
       case 'Pending':
@@ -44,8 +54,13 @@ class _CollectorReportDetailScreenState
 
   String _formatDate(dynamic timestamp) {
     if (timestamp == null) return 'No date';
-    final date = timestamp.toDate();
-    return DateFormat('dd MMM yyyy, hh:mm a').format(date);
+
+    try {
+      final date = timestamp.toDate();
+      return DateFormat('dd MMM yyyy, hh:mm a').format(date);
+    } catch (e) {
+      return 'No date';
+    }
   }
 
   Future<void> _openGoogleMaps() async {
@@ -62,9 +77,11 @@ class _CollectorReportDetailScreenState
       );
     } else {
       if (!mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text("Could not launch Google Maps"),
+          backgroundColor: Colors.red,
         ),
       );
     }
@@ -157,6 +174,7 @@ class _CollectorReportDetailScreenState
                         await _openGoogleMaps();
 
                         if (!mounted) return;
+
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text(
@@ -169,6 +187,7 @@ class _CollectorReportDetailScreenState
                         );
                       } catch (e) {
                         if (!mounted) return;
+
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text('Failed: $e'),
@@ -205,6 +224,7 @@ class _CollectorReportDetailScreenState
     String selectedStatus = widget.report.status;
     final TextEditingController remarkController =
         TextEditingController(text: widget.report.collectorRemark);
+
     File? completionImageFile;
     bool isSaving = false;
 
@@ -415,6 +435,7 @@ class _CollectorReportDetailScreenState
                                     completionImageFile == null &&
                                     widget.report.completionImageUrl.isEmpty) {
                                   if (!mounted) return;
+
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
                                       content: Text(
@@ -464,7 +485,8 @@ class _CollectorReportDetailScreenState
 
                                   if (!mounted) return;
 
-                                  final messenger = ScaffoldMessenger.of(context);
+                                  final messenger =
+                                      ScaffoldMessenger.of(context);
 
                                   messenger.showSnackBar(
                                     const SnackBar(
@@ -482,6 +504,7 @@ class _CollectorReportDetailScreenState
                                   Future.microtask(() {
                                     if (mounted &&
                                         Navigator.of(context).canPop()) {
+                                      // true means previous task page can refresh if needed.
                                       Navigator.of(context).pop(true);
                                     }
                                   });
@@ -606,211 +629,218 @@ class _CollectorReportDetailScreenState
     final report = widget.report;
     final statusColor = _statusColor(report.status);
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF7F9FC),
-      appBar: AppBar(
-        title: const Text(
-          'Task Details',
-          style: TextStyle(fontWeight: FontWeight.bold),
+    return WillPopScope(
+      onWillPop: _onWillPop,
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF7F9FC),
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new),
+            onPressed: _goBackToTaskList,
+          ),
+          title: const Text(
+            'Task Details',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          centerTitle: true,
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          foregroundColor: Colors.black87,
         ),
-        centerTitle: true,
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        foregroundColor: Colors.black87,
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (report.imageUrl.isNotEmpty)
-              Container(
-                width: double.infinity,
-                height: 220,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(24),
-                  color: Colors.grey.shade200,
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(24),
-                  child: Image.network(
-                    report.imageUrl,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) {
-                      return Icon(
-                        Icons.broken_image_outlined,
-                        size: 56,
-                        color: Colors.grey.shade400,
-                      );
-                    },
-                  ),
-                ),
-              ),
-            const SizedBox(height: 18),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    report.title,
-                    style: const TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.black87,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (report.imageUrl.isNotEmpty)
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
+                  width: double.infinity,
+                  height: 220,
                   decoration: BoxDecoration(
-                    color: statusColor.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(24),
+                    color: Colors.grey.shade200,
                   ),
-                  child: Text(
-                    report.status,
-                    style: TextStyle(
-                      color: statusColor,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 12,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(24),
+                    child: Image.network(
+                      report.imageUrl,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) {
+                        return Icon(
+                          Icons.broken_image_outlined,
+                          size: 56,
+                          color: Colors.grey.shade400,
+                        );
+                      },
                     ),
                   ),
                 ),
-              ],
-            ),
-            const SizedBox(height: 18),
-            _buildInfoTile(
-              icon: Icons.category_outlined,
-              label: 'Waste Type',
-              value: report.wasteType,
-            ),
-            const SizedBox(height: 12),
-            _buildInfoTile(
-              icon: Icons.location_on_outlined,
-              label: 'Location',
-              value: report.location,
-              valueColor: Colors.blue.shade700,
-              underline: true,
-              onTap: _showNavigationOptions,
-            ),
-            const SizedBox(height: 12),
-            _buildInfoTile(
-              icon: Icons.description_outlined,
-              label: 'Description',
-              value: report.description,
-            ),
-            const SizedBox(height: 12),
-            _buildInfoTile(
-              icon: Icons.person_outline,
-              label: 'Reported By',
-              value: report.userName,
-            ),
-            const SizedBox(height: 12),
-            _buildInfoTile(
-              icon: Icons.schedule_outlined,
-              label: 'Created At',
-              value: _formatDate(report.createdAt),
-            ),
-            const SizedBox(height: 12),
-            _buildInfoTile(
-              icon: Icons.update_outlined,
-              label: 'Updated At',
-              value: _formatDate(report.updatedAt),
-            ),
-            const SizedBox(height: 12),
-            _buildInfoTile(
-              icon: Icons.edit_note_outlined,
-              label: 'Admin Remark',
-              value: report.adminRemark,
-            ),
-            const SizedBox(height: 12),
-            _buildInfoTile(
-              icon: Icons.assignment_turned_in_outlined,
-              label: 'Collector Remark',
-              value: report.collectorRemark,
-            ),
-            if (report.completionImageUrl.isNotEmpty) ...[
-              const SizedBox(height: 20),
-              const Text(
-                'Completion Proof',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
-                ),
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      report.title,
+                      style: const TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: statusColor.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      report.status,
+                      style: TextStyle(
+                        color: statusColor,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              _buildInfoTile(
+                icon: Icons.category_outlined,
+                label: 'Waste Type',
+                value: report.wasteType,
               ),
               const SizedBox(height: 12),
-              Container(
-                width: double.infinity,
-                height: 220,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(24),
-                  color: Colors.grey.shade200,
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(24),
-                  child: Image.network(
-                    report.completionImageUrl,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) {
-                      return Icon(
-                        Icons.broken_image_outlined,
-                        size: 56,
-                        color: Colors.grey.shade400,
-                      );
-                    },
-                  ),
-                ),
+              _buildInfoTile(
+                icon: Icons.location_on_outlined,
+                label: 'Location',
+                value: report.location,
+                valueColor: Colors.blue.shade700,
+                underline: true,
+                onTap: _showNavigationOptions,
               ),
-            ],
-            const SizedBox(height: 28),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _showNavigationOptions,
-                    icon: const Icon(Icons.near_me_outlined),
-                    label: const Text(
-                      'Navigate',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.blueGrey,
-                      side: BorderSide(color: Colors.grey.shade300),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                    ),
+              const SizedBox(height: 12),
+              _buildInfoTile(
+                icon: Icons.description_outlined,
+                label: 'Description',
+                value: report.description,
+              ),
+              const SizedBox(height: 12),
+              _buildInfoTile(
+                icon: Icons.person_outline,
+                label: 'Reported By',
+                value: report.userName,
+              ),
+              const SizedBox(height: 12),
+              _buildInfoTile(
+                icon: Icons.schedule_outlined,
+                label: 'Created At',
+                value: _formatDate(report.createdAt),
+              ),
+              const SizedBox(height: 12),
+              _buildInfoTile(
+                icon: Icons.update_outlined,
+                label: 'Updated At',
+                value: _formatDate(report.updatedAt),
+              ),
+              const SizedBox(height: 12),
+              _buildInfoTile(
+                icon: Icons.edit_note_outlined,
+                label: 'Admin Remark',
+                value: report.adminRemark,
+              ),
+              const SizedBox(height: 12),
+              _buildInfoTile(
+                icon: Icons.assignment_turned_in_outlined,
+                label: 'Collector Remark',
+                value: report.collectorRemark,
+              ),
+              if (report.completionImageUrl.isNotEmpty) ...[
+                const SizedBox(height: 20),
+                const Text(
+                  'Completion Proof',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: report.status == 'Resolved'
-                        ? null
-                        : _showUpdateBottomSheet,
-                    icon: const Icon(Icons.edit_outlined),
-                    label: const Text(
-                      'Update Status',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: statusColor,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      padding: const EdgeInsets.symmetric(vertical: 16),
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  height: 220,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(24),
+                    color: Colors.grey.shade200,
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(24),
+                    child: Image.network(
+                      report.completionImageUrl,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) {
+                        return Icon(
+                          Icons.broken_image_outlined,
+                          size: 56,
+                          color: Colors.grey.shade400,
+                        );
+                      },
                     ),
                   ),
                 ),
               ],
-            ),
-          ],
+              const SizedBox(height: 28),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _showNavigationOptions,
+                      icon: const Icon(Icons.near_me_outlined),
+                      label: const Text(
+                        'Navigate',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.blueGrey,
+                        side: BorderSide(color: Colors.grey.shade300),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: report.status == 'Resolved'
+                          ? null
+                          : _showUpdateBottomSheet,
+                      icon: const Icon(Icons.edit_outlined),
+                      label: const Text(
+                        'Update Status',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: statusColor,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
