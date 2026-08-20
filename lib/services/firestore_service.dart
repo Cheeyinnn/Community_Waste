@@ -36,10 +36,7 @@ class FirestoreService {
 
     final snapshot = await _reportsRef
         .where('wasteType', isEqualTo: wasteType)
-        .where(
-          'createdAt',
-          isGreaterThanOrEqualTo: Timestamp.fromDate(cutoff),
-        )
+        .where('createdAt', isGreaterThanOrEqualTo: Timestamp.fromDate(cutoff))
         .limit(maxResults)
         .get();
 
@@ -144,14 +141,8 @@ class FirestoreService {
   }) {
     return _reportsRef
         .where('collectorId', isEqualTo: collectorId)
-        .where(
-          'createdAt',
-          isGreaterThanOrEqualTo: Timestamp.fromDate(start),
-        )
-        .where(
-          'createdAt',
-          isLessThan: Timestamp.fromDate(end),
-        )
+        .where('createdAt', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
+        .where('createdAt', isLessThan: Timestamp.fromDate(end))
         .orderBy('createdAt', descending: true)
         .snapshots()
         .map(_mapSnapshotToWasteReports);
@@ -182,10 +173,9 @@ class FirestoreService {
   }
 
   Stream<List<WasteReport>> getRecentUserActivities(String userId) {
-    return _reportsRef
-        .where('userId', isEqualTo: userId)
-        .snapshots()
-        .map((snapshot) {
+    return _reportsRef.where('userId', isEqualTo: userId).snapshots().map((
+      snapshot,
+    ) {
       final reports = _mapSnapshotToWasteReports(snapshot);
 
       reports.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
@@ -269,9 +259,7 @@ class FirestoreService {
     await _reportsRef.doc(reportId).update(data);
   }
 
-  Future<void> removeCollector({
-    required String reportId,
-  }) async {
+  Future<void> removeCollector({required String reportId}) async {
     await _reportsRef.doc(reportId).update({
       'collectorId': '',
       'collectorName': '',
@@ -348,9 +336,6 @@ class FirestoreService {
       data['photoUrl'] = photoUrl;
     }
 
-    await _usersRef.doc(uid).set(
-      data,
-      SetOptions(merge: true),
-    );
+    await _usersRef.doc(uid).set(data, SetOptions(merge: true));
   }
 }

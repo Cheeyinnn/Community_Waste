@@ -130,11 +130,7 @@ class _ReportListScreenState extends State<ReportListScreen> {
     final user = FirebaseAuth.instance.currentUser;
 
     if (user == null) {
-      return const Scaffold(
-        body: Center(
-          child: Text('User not logged in'),
-        ),
-      );
+      return const Scaffold(body: Center(child: Text('User not logged in')));
     }
 
     return Scaffold(
@@ -146,10 +142,7 @@ class _ReportListScreenState extends State<ReportListScreen> {
         ),
         title: const Text(
           'My Reports',
-          style: TextStyle(
-            fontWeight: FontWeight.w700,
-            fontSize: 22,
-          ),
+          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 22),
         ),
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -179,8 +172,8 @@ class _ReportListScreenState extends State<ReportListScreen> {
           final reports = _selectedStatusFilter == 'All'
               ? allReports
               : allReports
-                  .where((r) => r.status == _selectedStatusFilter)
-                  .toList();
+                    .where((r) => r.status == _selectedStatusFilter)
+                    .toList();
 
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -196,16 +189,20 @@ class _ReportListScreenState extends State<ReportListScreen> {
                   itemBuilder: (context, index) {
                     final filter = _filters[index];
                     final isSelected = _selectedStatusFilter == filter;
-                    final baseColor =
-                        filter == 'All' ? Colors.green : _statusColor(filter);
+                    final baseColor = filter == 'All'
+                        ? Colors.green
+                        : _statusColor(filter);
 
                     final count = filter == 'All'
                         ? allReports.length
                         : allReports.where((r) => r.status == filter).length;
 
                     return Padding(
-                      padding:
-                          const EdgeInsets.only(right: 10, top: 4, bottom: 4),
+                      padding: const EdgeInsets.only(
+                        right: 10,
+                        top: 4,
+                        bottom: 4,
+                      ),
                       child: ChoiceChip(
                         label: Text('$filter ($count)'),
                         selected: isSelected,
@@ -245,8 +242,10 @@ class _ReportListScreenState extends State<ReportListScreen> {
                 ),
               ),
               Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 8,
+                ),
                 child: Text(
                   'Found ${reports.length} reports',
                   style: TextStyle(
@@ -265,8 +264,7 @@ class _ReportListScreenState extends State<ReportListScreen> {
                         ),
                         padding: const EdgeInsets.all(20),
                         itemCount: reports.length,
-                        separatorBuilder: (_, __) =>
-                            const SizedBox(height: 16),
+                        separatorBuilder: (_, __) => const SizedBox(height: 16),
                         itemBuilder: (context, index) {
                           return _buildReportCard(context, reports[index]);
                         },
@@ -299,10 +297,7 @@ class _ReportListScreenState extends State<ReportListScreen> {
           const SizedBox(height: 24),
           const Text(
             "No reports found",
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-            ),
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
           Text(
@@ -310,10 +305,7 @@ class _ReportListScreenState extends State<ReportListScreen> {
                 ? "When you report waste,\nit will show up here."
                 : "No $_selectedStatusFilter reports yet.",
             textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 15,
-              color: Colors.grey.shade600,
-            ),
+            style: TextStyle(fontSize: 15, color: Colors.grey.shade600),
           ),
         ],
       ),
@@ -339,14 +331,12 @@ class _ReportListScreenState extends State<ReportListScreen> {
         borderRadius: BorderRadius.circular(20),
         onTap: () async {
           Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => ReportDetailScreen(
-            report: report,
-            isAdmin: false,
-          ),
-        ),
-      );
+            context,
+            MaterialPageRoute(
+              builder: (_) =>
+                  ReportDetailScreen(report: report, isAdmin: false),
+            ),
+          );
         },
         child: Padding(
           padding: const EdgeInsets.all(16),

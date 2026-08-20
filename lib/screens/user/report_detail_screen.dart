@@ -22,8 +22,7 @@ class ReportDetailScreen extends StatefulWidget {
 }
 
 class _ReportDetailScreenState extends State<ReportDetailScreen> {
-  static const String _googleApiKey =
-      'AIzaSyBHoNEbIfc0lqJ74D70b26P8_vxL5DSw9s';
+  static const String _googleApiKey = 'AIzaSyBHoNEbIfc0lqJ74D70b26P8_vxL5DSw9s';
 
   late String _title;
   late String _description;
@@ -84,8 +83,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
   }
 
   void _goBackFromDetail() {
-  Navigator.pop(context, true);
-}
+    Navigator.pop(context, true);
+  }
 
   Color _statusColor(String status) {
     switch (status) {
@@ -202,8 +201,9 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
       context: context,
       builder: (context) {
         return AlertDialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           title: const Text(
             'Update Status',
             style: TextStyle(fontWeight: FontWeight.bold),
@@ -413,8 +413,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                           locationController.text = selectedText;
                           locationController.selection =
                               TextSelection.fromPosition(
-                            TextPosition(offset: selectedText.length),
-                          );
+                                TextPosition(offset: selectedText.length),
+                              );
 
                           setDialogState(() {
                             selectedArea = selectedText;
@@ -437,8 +437,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                           locationController.text = selectedText;
                           locationController.selection =
                               TextSelection.fromPosition(
-                            TextPosition(offset: selectedText.length),
-                          );
+                                TextPosition(offset: selectedText.length),
+                              );
 
                           setDialogState(() {
                             selectedArea = selectedText;
@@ -555,14 +555,14 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                     Navigator.pop(dialogContext);
 
                     await _updateUserReport(
-                    title: newTitle,
-                    wasteType: selectedWasteType,
-                    description: newDescription,
-                    location: newLocation,
-                    area: newArea,
-                    latitude: selectedLatitude,
-                    longitude: selectedLongitude,
-                  );
+                      title: newTitle,
+                      wasteType: selectedWasteType,
+                      description: newDescription,
+                      location: newLocation,
+                      area: newArea,
+                      latitude: selectedLatitude,
+                      longitude: selectedLongitude,
+                    );
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.green.shade600,
@@ -586,103 +586,103 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
   }
 
   Future<void> _updateUserReport({
-  required String title,
-  required String wasteType,
-  required String description,
-  required String location,
-  required String area,
-  double? latitude,
-  double? longitude,
-}) async {
-  try {
-    double? finalLatitude = latitude;
-    double? finalLongitude = longitude;
-    String finalArea = area.trim().isNotEmpty ? area.trim() : location.trim();
-
-    // Always try to convert the newest address into coordinates.
-    // This is because map marker uses latitude and longitude, not location text.
+    required String title,
+    required String wasteType,
+    required String description,
+    required String location,
+    required String area,
+    double? latitude,
+    double? longitude,
+  }) async {
     try {
-      final locations = await locationFromAddress(location);
+      double? finalLatitude = latitude;
+      double? finalLongitude = longitude;
+      String finalArea = area.trim().isNotEmpty ? area.trim() : location.trim();
 
-      if (locations.isNotEmpty) {
-        finalLatitude = locations.first.latitude;
-        finalLongitude = locations.first.longitude;
+      // Always try to convert the newest address into coordinates.
+      // This is because map marker uses latitude and longitude, not location text.
+      try {
+        final locations = await locationFromAddress(location);
 
-        final detectedArea = await _getAreaFromCoordinates(
-          finalLatitude,
-          finalLongitude,
-        );
+        if (locations.isNotEmpty) {
+          finalLatitude = locations.first.latitude;
+          finalLongitude = locations.first.longitude;
 
-        if (detectedArea.trim().isNotEmpty) {
-          finalArea = detectedArea.trim();
+          final detectedArea = await _getAreaFromCoordinates(
+            finalLatitude,
+            finalLongitude,
+          );
+
+          if (detectedArea.trim().isNotEmpty) {
+            finalArea = detectedArea.trim();
+          }
         }
+      } catch (e) {
+        debugPrint('Failed to geocode edited location: $e');
       }
-    } catch (e) {
-      debugPrint('Failed to geocode edited location: $e');
-    }
 
-    if (finalLatitude == null || finalLongitude == null) {
+      if (finalLatitude == null || finalLongitude == null) {
+        if (!mounted) return;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Unable to get the new location coordinates. Please select a location from the suggestion list.',
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      debugPrint('SAVE REPORT LOCATION: $location');
+      debugPrint('SAVE REPORT AREA: $finalArea');
+      debugPrint('SAVE REPORT LATITUDE: $finalLatitude');
+      debugPrint('SAVE REPORT LONGITUDE: $finalLongitude');
+
+      await FirebaseFirestore.instance
+          .collection('reports')
+          .doc(widget.report.id)
+          .update({
+            'title': title,
+            'wasteType': wasteType,
+            'description': description,
+            'location': location,
+            'area': finalArea,
+            'latitude': finalLatitude,
+            'longitude': finalLongitude,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+
       if (!mounted) return;
+
+      setState(() {
+        _title = title;
+        _wasteType = wasteType;
+        _description = description;
+        _location = location;
+        _area = finalArea;
+        _latitude = finalLatitude!;
+        _longitude = finalLongitude!;
+      });
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            'Unable to get the new location coordinates. Please select a location from the suggestion list.',
-          ),
+          content: Text('Report updated successfully'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to update report: $e'),
           backgroundColor: Colors.red,
         ),
       );
-      return;
     }
-
-    debugPrint('SAVE REPORT LOCATION: $location');
-    debugPrint('SAVE REPORT AREA: $finalArea');
-    debugPrint('SAVE REPORT LATITUDE: $finalLatitude');
-    debugPrint('SAVE REPORT LONGITUDE: $finalLongitude');
-
-    await FirebaseFirestore.instance
-        .collection('reports')
-        .doc(widget.report.id)
-        .update({
-      'title': title,
-      'wasteType': wasteType,
-      'description': description,
-      'location': location,
-      'area': finalArea,
-      'latitude': finalLatitude,
-      'longitude': finalLongitude,
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
-
-    if (!mounted) return;
-
-    setState(() {
-      _title = title;
-      _wasteType = wasteType;
-      _description = description;
-      _location = location;
-      _area = finalArea;
-      _latitude = finalLatitude!;
-      _longitude = finalLongitude!;
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Report updated successfully'),
-        backgroundColor: Colors.green,
-      ),
-    );
-  } catch (e) {
-    if (!mounted) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Failed to update report: $e'),
-        backgroundColor: Colors.red,
-      ),
-    );
   }
-}
 
   @override
   Widget build(BuildContext context) {
@@ -777,9 +777,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                         decoration: BoxDecoration(
                           color: Colors.green.shade50,
                           borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: Colors.green.shade100,
-                          ),
+                          border: Border.all(color: Colors.green.shade100),
                         ),
                         child: Row(
                           children: [
@@ -937,18 +935,12 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: Colors.grey.shade200,
-        ),
+        border: Border.all(color: Colors.grey.shade200),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            icon,
-            color: Colors.green.shade700,
-            size: 22,
-          ),
+          Icon(icon, color: Colors.green.shade700, size: 22),
           const SizedBox(width: 12),
           Expanded(
             child: Column(

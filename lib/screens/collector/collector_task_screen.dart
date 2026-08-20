@@ -12,10 +12,7 @@ import 'collector_report_detail_screen.dart';
 class CollectorTaskScreen extends StatefulWidget {
   final String initialFilter;
 
-  const CollectorTaskScreen({
-    super.key,
-    this.initialFilter = 'All',
-  });
+  const CollectorTaskScreen({super.key, this.initialFilter = 'All'});
 
   @override
   State<CollectorTaskScreen> createState() => _CollectorTaskScreenState();
@@ -24,12 +21,7 @@ class CollectorTaskScreen extends StatefulWidget {
 class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
   late String _selectedFilter;
 
-  final List<String> _filters = [
-    'All',
-    'Assigned',
-    'In Progress',
-    'Resolved',
-  ];
+  final List<String> _filters = ['All', 'Assigned', 'In Progress', 'Resolved'];
 
   final StorageService _storageService = StorageService();
 
@@ -73,10 +65,7 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
     return DateFormat('dd MMM, hh:mm a').format(date);
   }
 
-  Future<void> _openGoogleMaps(
-    BuildContext context,
-    WasteReport report,
-  ) async {
+  Future<void> _openGoogleMaps(BuildContext context, WasteReport report) async {
     final String query = Uri.encodeComponent(report.location);
 
     final Uri googleMapsUrl = Uri.parse(
@@ -84,16 +73,11 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
     );
 
     if (await canLaunchUrl(googleMapsUrl)) {
-      await launchUrl(
-        googleMapsUrl,
-        mode: LaunchMode.externalApplication,
-      );
+      await launchUrl(googleMapsUrl, mode: LaunchMode.externalApplication);
     } else {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Could not launch Google Maps"),
-        ),
+        const SnackBar(content: Text("Could not launch Google Maps")),
       );
     }
   }
@@ -111,9 +95,7 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
           padding: const EdgeInsets.fromLTRB(24, 24, 24, 20),
           decoration: const BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.vertical(
-              top: Radius.circular(30),
-            ),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
           ),
           child: SafeArea(
             top: false,
@@ -131,18 +113,12 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
                 const SizedBox(height: 20),
                 const Text(
                   'Navigation Options',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 8),
                 Text(
                   'Choose how you want to proceed with this task.',
-                  style: TextStyle(
-                    color: Colors.grey.shade600,
-                    fontSize: 14,
-                  ),
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 24),
@@ -240,16 +216,17 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
     FirestoreService firestoreService,
   ) async {
     String selectedStatus = report.status;
-    final TextEditingController remarkController =
-        TextEditingController(text: report.collectorRemark);
+    final TextEditingController remarkController = TextEditingController(
+      text: report.collectorRemark,
+    );
     File? completionImageFile;
     bool isSaving = false;
 
     final List<String> statuses = report.status == 'Assigned'
         ? ['Assigned', 'In Progress', 'Resolved']
         : report.status == 'In Progress'
-            ? ['In Progress', 'Resolved']
-            : ['Resolved'];
+        ? ['In Progress', 'Resolved']
+        : ['Resolved'];
 
     Future<void> pickCompletionImage(StateSetter setStateSheet) async {
       final picked = await ImagePicker().pickImage(
@@ -281,9 +258,7 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
               ),
               decoration: const BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.vertical(
-                  top: Radius.circular(30),
-                ),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
               ),
               child: SingleChildScrollView(
                 child: Column(
@@ -387,7 +362,8 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
                           decoration: BoxDecoration(
                             color: Colors.orange.shade50,
                             borderRadius: BorderRadius.circular(16),
-                            border: completionImageFile == null &&
+                            border:
+                                completionImageFile == null &&
                                     report.completionImageUrl.isEmpty
                                 ? Border.all(
                                     color: Colors.orange.shade300,
@@ -404,32 +380,31 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
                                   ),
                                 )
                               : report.completionImageUrl.isNotEmpty
-                                  ? ClipRRect(
-                                      borderRadius: BorderRadius.circular(16),
-                                      child: Image.network(
-                                        report.completionImageUrl,
-                                        fit: BoxFit.cover,
-                                      ),
-                                    )
-                                  : Column(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      children: [
-                                        Icon(
-                                          Icons.add_a_photo_rounded,
-                                          size: 40,
-                                          color: Colors.orange.shade400,
-                                        ),
-                                        const SizedBox(height: 8),
-                                        Text(
-                                          'Tap to upload photo',
-                                          style: TextStyle(
-                                            color: Colors.orange.shade700,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ],
+                              ? ClipRRect(
+                                  borderRadius: BorderRadius.circular(16),
+                                  child: Image.network(
+                                    report.completionImageUrl,
+                                    fit: BoxFit.cover,
+                                  ),
+                                )
+                              : Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.add_a_photo_rounded,
+                                      size: 40,
+                                      color: Colors.orange.shade400,
                                     ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Tap to upload photo',
+                                      style: TextStyle(
+                                        color: Colors.orange.shade700,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                         ),
                       ),
                       const SizedBox(height: 24),
@@ -453,8 +428,9 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
                                     report.completionImageUrl.isEmpty) {
                                   if (!screenContext.mounted) return;
 
-                                  ScaffoldMessenger.of(screenContext)
-                                      .showSnackBar(
+                                  ScaffoldMessenger.of(
+                                    screenContext,
+                                  ).showSnackBar(
                                     const SnackBar(
                                       content: Text(
                                         'Please upload a completion image',
@@ -473,27 +449,28 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
                                   if (selectedStatus == 'In Progress') {
                                     await firestoreService.startCollectorTask(
                                       reportId: report.id,
-                                      collectorRemark:
-                                          remarkController.text.trim(),
+                                      collectorRemark: remarkController.text
+                                          .trim(),
                                     );
                                   } else if (selectedStatus == 'Resolved') {
                                     String completionImageUrl =
                                         report.completionImageUrl;
 
                                     if (completionImageFile != null) {
-                                      completionImageUrl =
-                                          await _storageService
-                                              .uploadCompletionImage(
-                                        completionImageFile!,
-                                      );
+                                      completionImageUrl = await _storageService
+                                          .uploadCompletionImage(
+                                            completionImageFile!,
+                                          );
                                     }
 
-                                    await firestoreService.completeCollectorTask(
-                                      reportId: report.id,
-                                      collectorRemark:
-                                          remarkController.text.trim(),
-                                      completionImageUrl: completionImageUrl,
-                                    );
+                                    await firestoreService
+                                        .completeCollectorTask(
+                                          reportId: report.id,
+                                          collectorRemark: remarkController.text
+                                              .trim(),
+                                          completionImageUrl:
+                                              completionImageUrl,
+                                        );
                                   } else {
                                     await firestoreService.updateReportStatus(
                                       reportId: report.id,
@@ -505,8 +482,9 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
 
                                   Navigator.of(sheetContext).pop();
 
-                                  ScaffoldMessenger.of(screenContext)
-                                      .showSnackBar(
+                                  ScaffoldMessenger.of(
+                                    screenContext,
+                                  ).showSnackBar(
                                     const SnackBar(
                                       content: Text(
                                         'Task updated successfully!',
@@ -523,8 +501,9 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
                                     });
                                   }
 
-                                  ScaffoldMessenger.of(screenContext)
-                                      .showSnackBar(
+                                  ScaffoldMessenger.of(
+                                    screenContext,
+                                  ).showSnackBar(
                                     SnackBar(
                                       content: Text('Failed: $e'),
                                       backgroundColor: Colors.red,
@@ -568,11 +547,7 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
     final firestoreService = FirestoreService();
 
     if (currentUser == null) {
-      return const Scaffold(
-        body: Center(
-          child: Text('Not logged in'),
-        ),
-      );
+      return const Scaffold(body: Center(child: Text('Not logged in')));
     }
 
     return Scaffold(
@@ -598,9 +573,7 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
           }
 
           if (snapshot.hasError) {
-            return Center(
-              child: Text('Error: ${snapshot.error}'),
-            );
+            return Center(child: Text('Error: ${snapshot.error}'));
           }
 
           final reports = snapshot.data ?? [];
@@ -892,9 +865,8 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) => CollectorReportDetailScreen(
-                                report: report,
-                              ),
+                              builder: (_) =>
+                                  CollectorReportDetailScreen(report: report),
                             ),
                           );
                         },
@@ -920,10 +892,10 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
                         onPressed: report.status == 'Resolved'
                             ? null
                             : () => _showUpdateBottomSheet(
-                                  context,
-                                  report,
-                                  firestoreService,
-                                ),
+                                context,
+                                report,
+                                firestoreService,
+                              ),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: statusColor,
                           foregroundColor: Colors.white,

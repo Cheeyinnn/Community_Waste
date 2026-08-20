@@ -11,10 +11,7 @@ import '../../services/storage_service.dart';
 class CollectorReportDetailScreen extends StatefulWidget {
   final WasteReport report;
 
-  const CollectorReportDetailScreen({
-    super.key,
-    required this.report,
-  });
+  const CollectorReportDetailScreen({super.key, required this.report});
 
   @override
   State<CollectorReportDetailScreen> createState() =>
@@ -71,10 +68,7 @@ class _CollectorReportDetailScreenState
     );
 
     if (await canLaunchUrl(googleMapsUrl)) {
-      await launchUrl(
-        googleMapsUrl,
-        mode: LaunchMode.externalApplication,
-      );
+      await launchUrl(googleMapsUrl, mode: LaunchMode.externalApplication);
     } else {
       if (!mounted) return;
 
@@ -96,9 +90,7 @@ class _CollectorReportDetailScreenState
           padding: const EdgeInsets.fromLTRB(24, 24, 24, 20),
           decoration: const BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.vertical(
-              top: Radius.circular(30),
-            ),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
           ),
           child: SafeArea(
             top: false,
@@ -116,18 +108,12 @@ class _CollectorReportDetailScreenState
                 const SizedBox(height: 20),
                 const Text(
                   'Navigation Options',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 8),
                 Text(
                   'Choose how you want to proceed with this task.',
-                  style: TextStyle(
-                    color: Colors.grey.shade600,
-                    fontSize: 14,
-                  ),
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 24),
@@ -166,8 +152,8 @@ class _CollectorReportDetailScreenState
                             reportId: widget.report.id,
                             collectorRemark:
                                 widget.report.collectorRemark.isNotEmpty
-                                    ? widget.report.collectorRemark
-                                    : 'Started via navigation',
+                                ? widget.report.collectorRemark
+                                : 'Started via navigation',
                           );
                         }
 
@@ -222,8 +208,9 @@ class _CollectorReportDetailScreenState
 
   Future<void> _showUpdateBottomSheet() async {
     String selectedStatus = widget.report.status;
-    final TextEditingController remarkController =
-        TextEditingController(text: widget.report.collectorRemark);
+    final TextEditingController remarkController = TextEditingController(
+      text: widget.report.collectorRemark,
+    );
 
     File? completionImageFile;
     bool isSaving = false;
@@ -231,8 +218,8 @@ class _CollectorReportDetailScreenState
     final List<String> statuses = widget.report.status == 'Assigned'
         ? ['Assigned', 'In Progress', 'Resolved']
         : widget.report.status == 'In Progress'
-            ? ['In Progress', 'Resolved']
-            : ['Resolved'];
+        ? ['In Progress', 'Resolved']
+        : ['Resolved'];
 
     Future<void> pickCompletionImage(StateSetter setStateSheet) async {
       final picked = await ImagePicker().pickImage(
@@ -264,9 +251,7 @@ class _CollectorReportDetailScreenState
               ),
               decoration: const BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.vertical(
-                  top: Radius.circular(30),
-                ),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
               ),
               child: SingleChildScrollView(
                 child: Column(
@@ -370,7 +355,8 @@ class _CollectorReportDetailScreenState
                           decoration: BoxDecoration(
                             color: Colors.orange.shade50,
                             borderRadius: BorderRadius.circular(16),
-                            border: completionImageFile == null &&
+                            border:
+                                completionImageFile == null &&
                                     widget.report.completionImageUrl.isEmpty
                                 ? Border.all(
                                     color: Colors.orange.shade300,
@@ -387,32 +373,31 @@ class _CollectorReportDetailScreenState
                                   ),
                                 )
                               : widget.report.completionImageUrl.isNotEmpty
-                                  ? ClipRRect(
-                                      borderRadius: BorderRadius.circular(16),
-                                      child: Image.network(
-                                        widget.report.completionImageUrl,
-                                        fit: BoxFit.cover,
-                                      ),
-                                    )
-                                  : Column(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      children: [
-                                        Icon(
-                                          Icons.add_a_photo_rounded,
-                                          size: 40,
-                                          color: Colors.orange.shade400,
-                                        ),
-                                        const SizedBox(height: 8),
-                                        Text(
-                                          'Tap to upload photo',
-                                          style: TextStyle(
-                                            color: Colors.orange.shade700,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ],
+                              ? ClipRRect(
+                                  borderRadius: BorderRadius.circular(16),
+                                  child: Image.network(
+                                    widget.report.completionImageUrl,
+                                    fit: BoxFit.cover,
+                                  ),
+                                )
+                              : Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.add_a_photo_rounded,
+                                      size: 40,
+                                      color: Colors.orange.shade400,
                                     ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Tap to upload photo',
+                                      style: TextStyle(
+                                        color: Colors.orange.shade700,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                         ),
                       ),
                       const SizedBox(height: 24),
@@ -455,27 +440,28 @@ class _CollectorReportDetailScreenState
                                   if (selectedStatus == 'In Progress') {
                                     await _firestoreService.startCollectorTask(
                                       reportId: widget.report.id,
-                                      collectorRemark:
-                                          remarkController.text.trim(),
+                                      collectorRemark: remarkController.text
+                                          .trim(),
                                     );
                                   } else if (selectedStatus == 'Resolved') {
                                     String completionImageUrl =
                                         widget.report.completionImageUrl;
 
                                     if (completionImageFile != null) {
-                                      completionImageUrl =
-                                          await _storageService
-                                              .uploadCompletionImage(
-                                        completionImageFile!,
-                                      );
+                                      completionImageUrl = await _storageService
+                                          .uploadCompletionImage(
+                                            completionImageFile!,
+                                          );
                                     }
 
-                                    await _firestoreService.completeCollectorTask(
-                                      reportId: widget.report.id,
-                                      collectorRemark:
-                                          remarkController.text.trim(),
-                                      completionImageUrl: completionImageUrl,
-                                    );
+                                    await _firestoreService
+                                        .completeCollectorTask(
+                                          reportId: widget.report.id,
+                                          collectorRemark: remarkController.text
+                                              .trim(),
+                                          completionImageUrl:
+                                              completionImageUrl,
+                                        );
                                   } else {
                                     await _firestoreService.updateReportStatus(
                                       reportId: widget.report.id,
@@ -485,8 +471,9 @@ class _CollectorReportDetailScreenState
 
                                   if (!mounted) return;
 
-                                  final messenger =
-                                      ScaffoldMessenger.of(context);
+                                  final messenger = ScaffoldMessenger.of(
+                                    context,
+                                  );
 
                                   messenger.showSnackBar(
                                     const SnackBar(
@@ -602,8 +589,9 @@ class _CollectorReportDetailScreenState
                     height: 1.4,
                     fontWeight: FontWeight.w600,
                     color: valueColor ?? Colors.black87,
-                    decoration:
-                        underline ? TextDecoration.underline : TextDecoration.none,
+                    decoration: underline
+                        ? TextDecoration.underline
+                        : TextDecoration.none,
                   ),
                 ),
               ],

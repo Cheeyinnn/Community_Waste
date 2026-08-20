@@ -14,10 +14,7 @@ class StorageService {
           .child('report_images')
           .child(fileName);
 
-      await ref.putFile(
-        imageFile,
-        SettableMetadata(contentType: 'image/jpeg'),
-      );
+      await ref.putFile(imageFile, SettableMetadata(contentType: 'image/jpeg'));
 
       return await ref.getDownloadURL();
     } catch (e) {
@@ -35,10 +32,7 @@ class StorageService {
           .child('completion_images')
           .child(fileName);
 
-      await ref.putFile(
-        imageFile,
-        SettableMetadata(contentType: 'image/jpeg'),
-      );
+      await ref.putFile(imageFile, SettableMetadata(contentType: 'image/jpeg'));
 
       return await ref.getDownloadURL();
     } catch (e) {
@@ -53,10 +47,7 @@ class StorageService {
           .child('profile_pictures')
           .child('$uid.jpg');
 
-      await ref.putFile(
-        imageFile,
-        SettableMetadata(contentType: 'image/jpeg'),
-      );
+      await ref.putFile(imageFile, SettableMetadata(contentType: 'image/jpeg'));
 
       return await ref.getDownloadURL();
     } catch (e) {

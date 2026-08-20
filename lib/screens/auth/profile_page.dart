@@ -50,16 +50,19 @@ class _ProfilePageState extends State<ProfilePage> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error: $e")),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Error: $e")));
     } finally {
       if (mounted) setState(() => _isUploadingImage = false);
     }
   }
 
   // --- LOGIC: Password Reset ---
-  Future<void> _showPasswordResetDialog(BuildContext context, String email) async {
+  Future<void> _showPasswordResetDialog(
+    BuildContext context,
+    String email,
+  ) async {
     if (email.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("No email linked to this account.")),
@@ -71,21 +74,34 @@ class _ProfilePageState extends State<ProfilePage> {
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text("Change Password", style: TextStyle(fontWeight: FontWeight.bold)),
-        content: Text("We will send a password reset link to:\n\n$email\n\nWould you like to proceed?"),
+        title: const Text(
+          "Change Password",
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: Text(
+          "We will send a password reset link to:\n\n$email\n\nWould you like to proceed?",
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Cancel"),
+          ),
           ElevatedButton(
             onPressed: () async {
               await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
               if (!context.mounted) return;
               Navigator.pop(context);
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text("Reset email sent! Check your inbox.")),
+                const SnackBar(
+                  content: Text("Reset email sent! Check your inbox."),
+                ),
               );
             },
             style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-            child: const Text("Send Link", style: TextStyle(color: Colors.white)),
+            child: const Text(
+              "Send Link",
+              style: TextStyle(color: Colors.white),
+            ),
           ),
         ],
       ),
@@ -98,21 +114,39 @@ class _ProfilePageState extends State<ProfilePage> {
       padding: const EdgeInsets.only(top: 30),
       child: InkWell(
         onTap: () async {
-          bool confirm = await showDialog(
-            context: context,
-            builder: (context) => AlertDialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              title: const Text('Log Out'),
-              content: const Text('Are you sure you want to log out of the community app?'),
-              actions: [
-                TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel', style: TextStyle(color: Colors.grey))),
-                TextButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  child: const Text('Logout', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+          bool confirm =
+              await showDialog(
+                context: context,
+                builder: (context) => AlertDialog(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  title: const Text('Log Out'),
+                  content: const Text(
+                    'Are you sure you want to log out of the community app?',
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text(
+                        'Cancel',
+                        style: TextStyle(color: Colors.grey),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text(
+                        'Logout',
+                        style: TextStyle(
+                          color: Colors.red,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          ) ?? false;
+              ) ??
+              false;
 
           if (confirm) {
             await FirebaseAuth.instance.signOut();
@@ -165,12 +199,28 @@ class _ProfilePageState extends State<ProfilePage> {
             children: [
               Container(
                 padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(color: iconBg, borderRadius: BorderRadius.circular(12)),
+                decoration: BoxDecoration(
+                  color: iconBg,
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 child: Icon(icon, color: iconColor, size: 22),
               ),
               const SizedBox(width: 16),
-              Expanded(child: Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.black87))),
-              Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Colors.grey.shade400),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black87,
+                  ),
+                ),
+              ),
+              Icon(
+                Icons.arrow_forward_ios_rounded,
+                size: 14,
+                color: Colors.grey.shade400,
+              ),
             ],
           ),
         ),
@@ -183,7 +233,10 @@ class _ProfilePageState extends State<ProfilePage> {
     return Scaffold(
       backgroundColor: const Color(0xFFF7F9FC),
       appBar: AppBar(
-        title: const Text("My Profile", style: TextStyle(fontWeight: FontWeight.w700, fontSize: 22)),
+        title: const Text(
+          "My Profile",
+          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 22),
+        ),
         backgroundColor: Colors.transparent,
         elevation: 0,
         centerTitle: true,
@@ -192,11 +245,18 @@ class _ProfilePageState extends State<ProfilePage> {
       body: StreamBuilder<User?>(
         stream: _userStream,
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: Colors.green));
+          if (snapshot.connectionState == ConnectionState.waiting)
+            return const Center(
+              child: CircularProgressIndicator(color: Colors.green),
+            );
           final user = snapshot.data;
-          if (user == null) return const Center(child: Text("No user signed in."));
+          if (user == null)
+            return const Center(child: Text("No user signed in."));
 
-          final String displayName = (user.displayName?.trim().isNotEmpty == true) ? user.displayName!.trim() : 'Community Member';
+          final String displayName =
+              (user.displayName?.trim().isNotEmpty == true)
+              ? user.displayName!.trim()
+              : 'Community Member';
           final String email = user.email?.trim() ?? '';
           final String photoUrl = user.photoURL ?? '';
 
@@ -213,7 +273,13 @@ class _ProfilePageState extends State<ProfilePage> {
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(30),
-                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 20, offset: const Offset(0, 10))],
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.04),
+                        blurRadius: 20,
+                        offset: const Offset(0, 10),
+                      ),
+                    ],
                   ),
                   child: Column(
                     children: [
@@ -228,25 +294,66 @@ class _ProfilePageState extends State<ProfilePage> {
                                 CircleAvatar(
                                   radius: 50,
                                   backgroundColor: Colors.green.shade50,
-                                  backgroundImage: photoUrl.isNotEmpty ? NetworkImage(photoUrl) : null,
-                                  child: photoUrl.isEmpty ? Icon(Icons.person_rounded, size: 50, color: Colors.green.shade300) : null,
+                                  backgroundImage: photoUrl.isNotEmpty
+                                      ? NetworkImage(photoUrl)
+                                      : null,
+                                  child: photoUrl.isEmpty
+                                      ? Icon(
+                                          Icons.person_rounded,
+                                          size: 50,
+                                          color: Colors.green.shade300,
+                                        )
+                                      : null,
                                 ),
                                 Container(
                                   padding: const EdgeInsets.all(6),
-                                  decoration: BoxDecoration(color: Colors.green.shade600, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 3)),
-                                  child: const Icon(Icons.edit, color: Colors.white, size: 14),
+                                  decoration: BoxDecoration(
+                                    color: Colors.green.shade600,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: Colors.white,
+                                      width: 3,
+                                    ),
+                                  ),
+                                  child: const Icon(
+                                    Icons.edit,
+                                    color: Colors.white,
+                                    size: 14,
+                                  ),
                                 ),
                               ],
                             ),
                             if (_isUploadingImage)
-                              Container(width: 100, height: 100, decoration: BoxDecoration(color: Colors.black.withOpacity(0.3), shape: BoxShape.circle), child: const CircularProgressIndicator(color: Colors.white)),
+                              Container(
+                                width: 100,
+                                height: 100,
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withOpacity(0.3),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const CircularProgressIndicator(
+                                  color: Colors.white,
+                                ),
+                              ),
                           ],
                         ),
                       ),
                       const SizedBox(height: 16),
-                      Text(displayName, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                      Text(
+                        displayName,
+                        style: const TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                       const SizedBox(height: 4),
-                      Text(email, style: TextStyle(fontSize: 14, color: Colors.grey.shade600)),
+                      Text(
+                        email,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -258,7 +365,13 @@ class _ProfilePageState extends State<ProfilePage> {
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(24),
-                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 15, offset: const Offset(0, 5))],
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.03),
+                        blurRadius: 15,
+                        offset: const Offset(0, 5),
+                      ),
+                    ],
                   ),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(24),
@@ -269,9 +382,19 @@ class _ProfilePageState extends State<ProfilePage> {
                           iconBg: Colors.blue.shade50,
                           iconColor: Colors.blue.shade600,
                           title: "Edit Personal Details",
-                          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EditProfileScreen())),
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const EditProfileScreen(),
+                            ),
+                          ),
                         ),
-                        Divider(height: 1, color: Colors.grey.shade100, indent: 65, endIndent: 20),
+                        Divider(
+                          height: 1,
+                          color: Colors.grey.shade100,
+                          indent: 65,
+                          endIndent: 20,
+                        ),
                         _buildProfileOption(
                           icon: Icons.lock_outline_rounded,
                           iconBg: Colors.orange.shade50,

@@ -33,9 +33,7 @@ class AuthService {
           role: 'user',
         );
 
-        await _firestore.collection('users').doc(user.uid).set(
-              appUser.toMap(),
-            );
+        await _firestore.collection('users').doc(user.uid).set(appUser.toMap());
       }
 
       return credential;
@@ -67,27 +65,27 @@ class AuthService {
   }
 
   Future<String> getUserRole(String uid) async {
-  try {
-    final doc = await _firestore.collection('users').doc(uid).get();
+    try {
+      final doc = await _firestore.collection('users').doc(uid).get();
 
-    print('Doc exists: ${doc.exists}');
-    print('Doc data: ${doc.data()}');
+      print('Doc exists: ${doc.exists}');
+      print('Doc data: ${doc.data()}');
 
-    if (!doc.exists || doc.data() == null) {
+      if (!doc.exists || doc.data() == null) {
+        return 'user';
+      }
+
+      final role = doc.data()!['role'];
+      if (role == null) {
+        return 'user';
+      }
+
+      return role.toString().trim().toLowerCase();
+    } catch (e) {
+      print('Role read error: $e');
       return 'user';
     }
-
-    final role = doc.data()!['role'];
-    if (role == null) {
-      return 'user';
-    }
-
-    return role.toString().trim().toLowerCase();
-  } catch (e) {
-    print('Role read error: $e');
-    return 'user';
   }
-}
 
   Future<AppUser?> getCurrentAppUser() async {
     try {
@@ -132,9 +130,7 @@ class AuthService {
           role: role,
         );
 
-        await _firestore.collection('users').doc(user.uid).set(
-              appUser.toMap(),
-            );
+        await _firestore.collection('users').doc(user.uid).set(appUser.toMap());
       }
     } on FirebaseAuthException catch (e) {
       throw Exception(_getAuthErrorMessage(e));

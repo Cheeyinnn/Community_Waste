@@ -41,9 +41,7 @@ class _HomeScreenState extends State<HomeScreen>
   Future<void> _openNotificationPage() async {
     await Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => const NotificationPage(),
-      ),
+      MaterialPageRoute(builder: (_) => const NotificationPage()),
     );
 
     if (mounted) {
@@ -71,11 +69,7 @@ class _HomeScreenState extends State<HomeScreen>
     final String photoUrl = user?.photoURL ?? '';
 
     if (userId.isEmpty) {
-      return const Scaffold(
-        body: Center(
-          child: Text('User not found'),
-        ),
-      );
+      return const Scaffold(body: Center(child: Text('User not found')));
     }
 
     return Scaffold(
@@ -366,10 +360,7 @@ class _HomeScreenState extends State<HomeScreen>
                           decoration: BoxDecoration(
                             color: Colors.red,
                             borderRadius: BorderRadius.circular(20),
-                            border: Border.all(
-                              color: Colors.white,
-                              width: 2,
-                            ),
+                            border: Border.all(color: Colors.white, width: 2),
                           ),
                           child: Text(
                             unreadCount > 99 ? '99+' : unreadCount.toString(),
@@ -425,10 +416,7 @@ class _HomeScreenState extends State<HomeScreen>
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(28),
         gradient: const LinearGradient(
-          colors: [
-            Color(0xFF43B9FF),
-            Color(0xFF35C76F),
-          ],
+          colors: [Color(0xFF43B9FF), Color(0xFF35C76F)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -518,9 +506,7 @@ class _HomeScreenState extends State<HomeScreen>
                     decoration: BoxDecoration(
                       color: Colors.white.withOpacity(0.18),
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: Colors.white.withOpacity(0.22),
-                      ),
+                      border: Border.all(color: Colors.white.withOpacity(0.22)),
                     ),
                     child: const Row(
                       mainAxisSize: MainAxisSize.min,
@@ -655,10 +641,7 @@ class _HomeScreenState extends State<HomeScreen>
           CircleAvatar(
             radius: 24,
             backgroundColor: statusColor.withOpacity(0.12),
-            child: Icon(
-              Icons.description_outlined,
-              color: statusColor,
-            ),
+            child: Icon(Icons.description_outlined, color: statusColor),
           ),
           const SizedBox(width: 13),
           Expanded(
@@ -679,20 +662,14 @@ class _HomeScreenState extends State<HomeScreen>
                   report.location,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Colors.grey.shade700,
-                    fontSize: 13,
-                  ),
+                  style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
                 ),
               ],
             ),
           ),
           const SizedBox(width: 10),
           Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 10,
-              vertical: 6,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
               color: statusColor.withOpacity(0.10),
               borderRadius: BorderRadius.circular(12),
@@ -722,10 +699,7 @@ class _HomeScreenState extends State<HomeScreen>
       ),
       child: Text(
         text,
-        style: TextStyle(
-          color: Colors.grey.shade700,
-          fontSize: 14,
-        ),
+        style: TextStyle(color: Colors.grey.shade700, fontSize: 14),
       ),
     );
   }
@@ -799,10 +773,7 @@ class _ContributionSectionState extends State<_ContributionSection>
                   icon: const Icon(Icons.keyboard_arrow_down_rounded),
                   borderRadius: BorderRadius.circular(14),
                   items: const [
-                    DropdownMenuItem(
-                      value: 'Overall',
-                      child: Text('Overall'),
-                    ),
+                    DropdownMenuItem(value: 'Overall', child: Text('Overall')),
                     DropdownMenuItem(
                       value: 'Last 7 Days',
                       child: Text('Last 7 Days'),
@@ -832,16 +803,12 @@ class _ContributionSectionState extends State<_ContributionSection>
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(24),
                 ),
-                child: const Center(
-                  child: CircularProgressIndicator(),
-                ),
+                child: const Center(child: CircularProgressIndicator()),
               );
             }
 
             if (snapshot.hasError) {
-              return _buildEmptyCard(
-                text: 'Failed to load contribution data.',
-              );
+              return _buildEmptyCard(text: 'Failed to load contribution data.');
             }
 
             final reports = snapshot.data ?? [];
@@ -850,18 +817,20 @@ class _ContributionSectionState extends State<_ContributionSection>
 
             final List<WasteReport> filteredReports =
                 _selectedContributionRange == 'Last 7 Days'
-                    ? reports.where((r) {
-                        final created = r.createdAt.toDate();
-                        return created.isAfter(last7Days);
-                      }).toList()
-                    : reports;
+                ? reports.where((r) {
+                    final created = r.createdAt.toDate();
+                    return created.isAfter(last7Days);
+                  }).toList()
+                : reports;
 
             final int submitted = filteredReports.length;
-            final int resolved =
-                filteredReports.where((r) => r.status == 'Resolved').length;
+            final int resolved = filteredReports
+                .where((r) => r.status == 'Resolved')
+                .length;
 
-            final double rate =
-                submitted == 0 ? 0.0 : (resolved / submitted).clamp(0.0, 1.0);
+            final double rate = submitted == 0
+                ? 0.0
+                : (resolved / submitted).clamp(0.0, 1.0);
 
             return Container(
               width: double.infinity,
@@ -895,7 +864,8 @@ class _ContributionSectionState extends State<_ContributionSection>
                               children: [
                                 Expanded(
                                   child: _buildMiniContributionStat(
-                                    title: _selectedContributionRange ==
+                                    title:
+                                        _selectedContributionRange ==
                                             'Last 7 Days'
                                         ? 'Resolved (7d)'
                                         : 'Resolved',
@@ -907,7 +877,8 @@ class _ContributionSectionState extends State<_ContributionSection>
                                 const SizedBox(width: 10),
                                 Expanded(
                                   child: _buildMiniContributionStat(
-                                    title: _selectedContributionRange ==
+                                    title:
+                                        _selectedContributionRange ==
                                             'Last 7 Days'
                                         ? 'Submitted (7d)'
                                         : 'Submitted',
@@ -1006,53 +977,53 @@ class _ContributionSectionState extends State<_ContributionSection>
   }
 
   Widget _buildMiniContributionStat({
-  required String title,
-  required String value,
-  required Color color,
-  required IconData icon,
-}) {
-  return Container(
-    height: 145,
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
-    decoration: BoxDecoration(
-      color: color.withOpacity(0.08),
-      borderRadius: BorderRadius.circular(18),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Icon(icon, color: color, size: 22),
-        const SizedBox(height: 12),
-        Text(
-          value,
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            fontSize: 22,
-            fontWeight: FontWeight.w800,
-            color: Colors.black87,
+    required String title,
+    required String value,
+    required Color color,
+    required IconData icon,
+  }) {
+    return Container(
+      height: 145,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Icon(icon, color: color, size: 22),
+          const SizedBox(height: 12),
+          Text(
+            value,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
+              color: Colors.black87,
+            ),
           ),
-        ),
-        const SizedBox(height: 6),
-        Expanded(
-          child: Center(
-            child: Text(
-              title,
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 11,
-                height: 1.15,
-                color: Colors.grey.shade700,
-                fontWeight: FontWeight.w700,
+          const SizedBox(height: 6),
+          Expanded(
+            child: Center(
+              child: Text(
+                title,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 11,
+                  height: 1.15,
+                  color: Colors.grey.shade700,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
           ),
-        ),
-      ],
-    ),
-  );
-}
+        ],
+      ),
+    );
+  }
 
   Widget _buildEmptyCard({required String text}) {
     return Container(
@@ -1065,10 +1036,7 @@ class _ContributionSectionState extends State<_ContributionSection>
       ),
       child: Text(
         text,
-        style: TextStyle(
-          color: Colors.grey.shade700,
-          fontSize: 14,
-        ),
+        style: TextStyle(color: Colors.grey.shade700, fontSize: 14),
       ),
     );
   }

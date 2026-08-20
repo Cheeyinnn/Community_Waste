@@ -52,16 +52,16 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     final String name = _nameController.text.trim();
 
     if (name.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Name cannot be empty")),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Name cannot be empty")));
       return;
     }
 
     if (_user == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("No user is signed in")),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("No user is signed in")));
       return;
     }
 
@@ -87,11 +87,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
       await _user.reload();
 
-      await _firestoreService.updateUserProfile(
-        _user.uid,
-        name,
-        imageUrl,
-      );
+      await _firestoreService.updateUserProfile(_user.uid, name, imageUrl);
 
       if (!mounted) return;
 
@@ -107,10 +103,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Error: $e"),
-          backgroundColor: Colors.red,
-        ),
+        SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red),
       );
     } finally {
       if (mounted) {

@@ -10,10 +10,7 @@ import 'report_detail_screen.dart';
 class MapPage extends StatefulWidget {
   final bool showAllReports;
 
-  const MapPage({
-    super.key,
-    this.showAllReports = false,
-  });
+  const MapPage({super.key, this.showAllReports = false});
 
   @override
   State<MapPage> createState() => _MapPageState();
@@ -81,17 +78,11 @@ class _MapPageState extends State<MapPage> {
           BitmapDescriptor.hueViolet,
         );
       case 'In Progress':
-        return BitmapDescriptor.defaultMarkerWithHue(
-          BitmapDescriptor.hueAzure,
-        );
+        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure);
       case 'Resolved':
-        return BitmapDescriptor.defaultMarkerWithHue(
-          BitmapDescriptor.hueGreen,
-        );
+        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen);
       case 'Rejected':
-        return BitmapDescriptor.defaultMarkerWithHue(
-          BitmapDescriptor.hueRed,
-        );
+        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed);
       default:
         return BitmapDescriptor.defaultMarker;
     }
@@ -180,8 +171,9 @@ class _MapPageState extends State<MapPage> {
 
   Widget _buildFilterChip(String label) {
     final isSelected = _selectedFilter == label;
-    final Color chipColor =
-        label == 'All' ? Colors.black87 : _statusColor(label);
+    final Color chipColor = label == 'All'
+        ? Colors.black87
+        : _statusColor(label);
 
     return Padding(
       padding: const EdgeInsets.only(right: 10),
@@ -221,9 +213,7 @@ class _MapPageState extends State<MapPage> {
         side: BorderSide(
           color: isSelected ? Colors.transparent : chipColor.withOpacity(0.3),
         ),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         elevation: isSelected ? 4 : 0,
         shadowColor: chipColor.withOpacity(0.4),
       ),
@@ -243,7 +233,7 @@ class _MapPageState extends State<MapPage> {
             color: Colors.black.withOpacity(0.12),
             blurRadius: 15,
             offset: const Offset(0, 8),
-          )
+          ),
         ],
       ),
       child: ClipRRect(
@@ -437,11 +427,7 @@ class _MapPageState extends State<MapPage> {
     final user = FirebaseAuth.instance.currentUser;
 
     if (!widget.showAllReports && user == null) {
-      return const Scaffold(
-        body: Center(
-          child: Text('User not logged in'),
-        ),
-      );
+      return const Scaffold(body: Center(child: Text('User not logged in')));
     }
 
     return Scaffold(
@@ -449,10 +435,7 @@ class _MapPageState extends State<MapPage> {
       appBar: AppBar(
         title: Text(
           _pageTitle,
-          style: const TextStyle(
-            fontWeight: FontWeight.w700,
-            fontSize: 22,
-          ),
+          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 22),
         ),
         backgroundColor: Colors.transparent,
         elevation: 0,

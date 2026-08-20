@@ -81,17 +81,11 @@ class AdminDashboardScreen extends StatelessWidget {
         ),
         title: Text(
           title,
-          style: const TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 16,
-          ),
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
         ),
         subtitle: Text(
           subtitle,
-          style: TextStyle(
-            color: Colors.grey.shade500,
-            fontSize: 13,
-          ),
+          style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
         ),
         trailing: const Icon(Icons.chevron_right_rounded),
         onTap: onTap,
@@ -99,10 +93,7 @@ class AdminDashboardScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildRecentReportItem(
-    BuildContext context,
-    WasteReport report,
-  ) {
+  Widget _buildRecentReportItem(BuildContext context, WasteReport report) {
     final statusColor = _getStatusColor(report.status);
 
     return Container(
@@ -141,10 +132,7 @@ class AdminDashboardScreen extends StatelessWidget {
         ),
         title: Text(
           report.title,
-          style: const TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 15,
-          ),
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
@@ -159,10 +147,7 @@ class AdminDashboardScreen extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 8,
-                vertical: 3,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
                 color: statusColor.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(8),
@@ -235,7 +220,7 @@ class AdminDashboardScreen extends StatelessWidget {
 
           final allReports = snapshot.data ?? [];
           final recentReports = allReports.toList()
-  ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+            ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
           return ListView(
             key: const PageStorageKey('admin_dashboard_scroll'),
@@ -262,9 +247,7 @@ class AdminDashboardScreen extends StatelessWidget {
                 onNavigateToReportsByArea: onNavigateToReportsByArea,
               ),
               const SizedBox(height: 24),
-              _SubmissionTrendSection(
-                reports: allReports,
-              ),
+              _SubmissionTrendSection(reports: allReports),
               const SizedBox(height: 32),
               const Text(
                 'Quick Actions',
@@ -295,32 +278,27 @@ class AdminDashboardScreen extends StatelessWidget {
                 children: [
                   const Text(
                     'Recent Reports',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                   ),
                   TextButton(
                     onPressed: () => onNavigateToReports('All'),
-                    style: TextButton.styleFrom(
-                      foregroundColor: Colors.blue,
-                    ),
+                    style: TextButton.styleFrom(foregroundColor: Colors.blue),
                     child: const Text('See All'),
                   ),
                 ],
               ),
               const SizedBox(height: 12),
               if (recentReports.isEmpty)
-              const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(20),
-                  child: Text('No reports available'),
-                ),
-              )
-            else
-              ...recentReports
-                  .take(3)
-                  .map((report) => _buildRecentReportItem(context, report)),
+                const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(20),
+                    child: Text('No reports available'),
+                  ),
+                )
+              else
+                ...recentReports
+                    .take(3)
+                    .map((report) => _buildRecentReportItem(context, report)),
             ],
           );
         },
@@ -350,12 +328,7 @@ class _DashboardSummarySectionState extends State<_DashboardSummarySection>
   String _selectedRange = 'Overall';
   String _selectedHotspotPriority = 'All';
 
-  final List<String> _hotspotPriorityFilters = [
-    'All',
-    'High',
-    'Medium',
-    'Low',
-  ];
+  final List<String> _hotspotPriorityFilters = ['All', 'High', 'Medium', 'Low'];
 
   @override
   bool get wantKeepAlive => true;
@@ -428,10 +401,7 @@ class _DashboardSummarySectionState extends State<_DashboardSummarySection>
     }
   }
 
-  int _countHotspotAreasByPriority(
-    List<WasteReport> reports,
-    String priority,
-  ) {
+  int _countHotspotAreasByPriority(List<WasteReport> reports, String priority) {
     final areaCounts = _getAreaCounts(reports);
 
     if (priority == 'All') {
@@ -454,10 +424,13 @@ class _DashboardSummarySectionState extends State<_DashboardSummarySection>
       return areaCounts.take(5).toList();
     }
 
-    return areaCounts.where((entry) {
-      final priority = _autoPriorityFromCount(entry.value);
-      return priority == _selectedHotspotPriority;
-    }).take(5).toList();
+    return areaCounts
+        .where((entry) {
+          final priority = _autoPriorityFromCount(entry.value);
+          return priority == _selectedHotspotPriority;
+        })
+        .take(5)
+        .toList();
   }
 
   String _rangeLabel() {
@@ -540,10 +513,7 @@ class _DashboardSummarySectionState extends State<_DashboardSummarySection>
                 icon: const Icon(Icons.keyboard_arrow_down_rounded),
                 borderRadius: BorderRadius.circular(14),
                 items: const [
-                  DropdownMenuItem(
-                    value: 'Overall',
-                    child: Text('Overall'),
-                  ),
+                  DropdownMenuItem(value: 'Overall', child: Text('Overall')),
                   DropdownMenuItem(
                     value: 'Last 7 Days',
                     child: Text('Last 7 Days'),
@@ -655,19 +625,13 @@ class _DashboardSummarySectionState extends State<_DashboardSummarySection>
               color: Colors.red.withOpacity(0.1),
               borderRadius: BorderRadius.circular(14),
             ),
-            child: const Icon(
-              Icons.location_on_rounded,
-              color: Colors.red,
-            ),
+            child: const Icon(Icons.location_on_rounded, color: Colors.red),
           ),
           const SizedBox(width: 14),
           Expanded(
             child: Text(
               'Hotspot Summary ${_rangeLabel()}: $highCount High, $mediumCount Medium, $lowCount Low area(s)',
-              style: const TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 14,
-              ),
+              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
             ),
           ),
         ],
@@ -684,8 +648,9 @@ class _DashboardSummarySectionState extends State<_DashboardSummarySection>
         itemBuilder: (context, index) {
           final filter = _hotspotPriorityFilters[index];
           final isSelected = _selectedHotspotPriority == filter;
-          final color =
-              filter == 'All' ? Colors.blueGrey : _getPriorityColor(filter);
+          final color = filter == 'All'
+              ? Colors.blueGrey
+              : _getPriorityColor(filter);
 
           return Padding(
             padding: const EdgeInsets.only(right: 8),
@@ -708,8 +673,9 @@ class _DashboardSummarySectionState extends State<_DashboardSummarySection>
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(20),
                 side: BorderSide(
-                  color:
-                      isSelected ? Colors.transparent : color.withOpacity(0.4),
+                  color: isSelected
+                      ? Colors.transparent
+                      : color.withOpacity(0.4),
                 ),
               ),
             ),
@@ -739,10 +705,7 @@ class _DashboardSummarySectionState extends State<_DashboardSummarySection>
         children: [
           const Text(
             'Hotspot Areas',
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
-            ),
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
           ),
           const SizedBox(height: 6),
           Text(
@@ -791,9 +754,7 @@ class _DashboardSummarySectionState extends State<_DashboardSummarySection>
                   decoration: BoxDecoration(
                     color: priorityColor.withOpacity(0.05),
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: priorityColor.withOpacity(0.15),
-                    ),
+                    border: Border.all(color: priorityColor.withOpacity(0.15)),
                   ),
                   child: Row(
                     children: [
@@ -943,12 +904,11 @@ class _DashboardSummarySectionState extends State<_DashboardSummarySection>
 class _SubmissionTrendSection extends StatefulWidget {
   final List<WasteReport> reports;
 
-  const _SubmissionTrendSection({
-    required this.reports,
-  });
+  const _SubmissionTrendSection({required this.reports});
 
   @override
-  State<_SubmissionTrendSection> createState() => _SubmissionTrendSectionState();
+  State<_SubmissionTrendSection> createState() =>
+      _SubmissionTrendSectionState();
 }
 
 class _SubmissionTrendSectionState extends State<_SubmissionTrendSection>
@@ -992,15 +952,7 @@ class _SubmissionTrendSectionState extends State<_SubmissionTrendSection>
       return weekCounts;
     }
 
-    final Map<int, int> dayCounts = {
-      0: 0,
-      1: 0,
-      2: 0,
-      3: 0,
-      4: 0,
-      5: 0,
-      6: 0,
-    };
+    final Map<int, int> dayCounts = {0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0};
 
     final now = DateTime.now();
 
@@ -1024,7 +976,8 @@ class _SubmissionTrendSectionState extends State<_SubmissionTrendSection>
   Widget _buildTrendChart(List<WasteReport> reports) {
     final filteredReports = _filterReportsByRange(reports);
     final chartData = _getChartData(filteredReports);
-    final maxY = (chartData.values.isEmpty
+    final maxY =
+        (chartData.values.isEmpty
             ? 0
             : chartData.values.reduce((a, b) => a > b ? a : b)) +
         1;
@@ -1051,12 +1004,9 @@ class _SubmissionTrendSectionState extends State<_SubmissionTrendSection>
             _selectedChartRange == 'This Month'
                 ? 'Monthly Submission Trend'
                 : _selectedChartRange == 'Overall'
-                    ? 'Overall Submission Trend'
-                    : 'Weekly Submission Trend',
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
-            ),
+                ? 'Overall Submission Trend'
+                : 'Weekly Submission Trend',
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
@@ -1076,10 +1026,7 @@ class _SubmissionTrendSectionState extends State<_SubmissionTrendSection>
                   icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 20),
                   borderRadius: BorderRadius.circular(12),
                   items: const [
-                    DropdownMenuItem(
-                      value: 'Overall',
-                      child: Text('Overall'),
-                    ),
+                    DropdownMenuItem(value: 'Overall', child: Text('Overall')),
                     DropdownMenuItem(
                       value: 'Last 7 Days',
                       child: Text('Last 7 Days'),

@@ -35,12 +35,7 @@ class _AdminReportListScreenState extends State<AdminReportListScreen> {
     'Rejected',
   ];
 
-  final List<String> _priorityFilters = [
-    'All',
-    'High',
-    'Medium',
-    'Low',
-  ];
+  final List<String> _priorityFilters = ['All', 'High', 'Medium', 'Low'];
 
   @override
   void initState() {
@@ -141,10 +136,7 @@ class _AdminReportListScreenState extends State<AdminReportListScreen> {
     return displayPriority == _selectedPriorityFilter;
   }
 
-  int _countPriorityReports(
-    List<WasteReport> areaReports,
-    String filter,
-  ) {
+  int _countPriorityReports(List<WasteReport> areaReports, String filter) {
     if (_selectedAreaFilter.trim().isEmpty) {
       if (filter == 'All') {
         return areaReports.length;
@@ -184,9 +176,7 @@ class _AdminReportListScreenState extends State<AdminReportListScreen> {
     );
   }
 
-  Widget _buildAreaFilterBanner({
-    required List<WasteReport> areaReports,
-  }) {
+  Widget _buildAreaFilterBanner({required List<WasteReport> areaReports}) {
     if (_selectedAreaFilter.isEmpty) {
       return const SizedBox.shrink();
     }
@@ -205,11 +195,7 @@ class _AdminReportListScreenState extends State<AdminReportListScreen> {
       ),
       child: Row(
         children: [
-          const Icon(
-            Icons.location_on_rounded,
-            color: Colors.blue,
-            size: 20,
-          ),
+          const Icon(Icons.location_on_rounded, color: Colors.blue, size: 20),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
@@ -276,20 +262,22 @@ class _AdminReportListScreenState extends State<AdminReportListScreen> {
                 report.area.trim() == _selectedAreaFilter.trim();
           }).toList();
 
-          final filteredReports = reports.where((report) {
-            final statusMatch =
-                _selectedFilter == 'All' || report.status == _selectedFilter;
+          final filteredReports =
+              reports.where((report) {
+                final statusMatch =
+                    _selectedFilter == 'All' ||
+                    report.status == _selectedFilter;
 
-            final areaMatch = _selectedAreaFilter.trim().isEmpty ||
-                report.area.trim() == _selectedAreaFilter.trim();
+                final areaMatch =
+                    _selectedAreaFilter.trim().isEmpty ||
+                    report.area.trim() == _selectedAreaFilter.trim();
 
-            final priorityMatch = _matchSelectedPriority(report, reports);
+                final priorityMatch = _matchSelectedPriority(report, reports);
 
-            return statusMatch && areaMatch && priorityMatch;
-          }).toList()
-            ..sort((a, b) {
-              return b.createdAt.compareTo(a.createdAt);
-            });
+                return statusMatch && areaMatch && priorityMatch;
+              }).toList()..sort((a, b) {
+                return b.createdAt.compareTo(a.createdAt);
+              });
 
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -297,14 +285,15 @@ class _AdminReportListScreenState extends State<AdminReportListScreen> {
               _buildSectionLabel('Status'),
               _buildStatusFilterBar(areaFilteredReports),
               _buildSectionLabel(
-                _selectedAreaFilter.isEmpty
-                    ? 'Priority'
-                    : 'Area Priority',
+                _selectedAreaFilter.isEmpty ? 'Priority' : 'Area Priority',
               ),
               _buildPriorityFilterBar(areaFilteredReports),
               _buildAreaFilterBanner(areaReports: areaFilteredReports),
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 8,
+                ),
                 child: Text(
                   'Found ${filteredReports.length} results',
                   style: TextStyle(
@@ -351,8 +340,9 @@ class _AdminReportListScreenState extends State<AdminReportListScreen> {
         itemBuilder: (context, index) {
           final filter = _filters[index];
           final isSelected = _selectedFilter == filter;
-          final baseColor =
-              filter == 'All' ? Colors.blueGrey : _statusColor(filter);
+          final baseColor = filter == 'All'
+              ? Colors.blueGrey
+              : _statusColor(filter);
 
           final count = filter == 'All'
               ? reports.length
@@ -405,16 +395,17 @@ class _AdminReportListScreenState extends State<AdminReportListScreen> {
         itemBuilder: (context, index) {
           final filter = _priorityFilters[index];
           final isSelected = _selectedPriorityFilter == filter;
-          final baseColor =
-              filter == 'All' ? Colors.blueGrey : _priorityColor(filter);
+          final baseColor = filter == 'All'
+              ? Colors.blueGrey
+              : _priorityColor(filter);
 
           final count = _countPriorityReports(reports, filter);
 
           final label = _selectedAreaFilter.isEmpty
               ? '$filter ($count)'
               : filter == 'All'
-                  ? 'Active ($count)'
-                  : '$filter Area ($count)';
+              ? 'Active ($count)'
+              : '$filter Area ($count)';
 
           return Padding(
             padding: const EdgeInsets.only(right: 10, top: 4, bottom: 4),
@@ -486,16 +477,16 @@ class _AdminReportListScreenState extends State<AdminReportListScreen> {
           child: InkWell(
             onTap: () async {
               final changed = await Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => AdminReportDetailScreen(
-                  report: report,
-                  initialPriorityOverride: _selectedAreaFilter.trim().isEmpty
-                      ? null
-                      : displayPriority,
+                context,
+                MaterialPageRoute(
+                  builder: (_) => AdminReportDetailScreen(
+                    report: report,
+                    initialPriorityOverride: _selectedAreaFilter.trim().isEmpty
+                        ? null
+                        : displayPriority,
+                  ),
                 ),
-              ),
-            );
+              );
 
               if (changed == true && mounted) {
                 setState(() {});
@@ -654,7 +645,8 @@ class _AdminReportListScreenState extends State<AdminReportListScreen> {
   }
 
   Widget _buildEmptyState() {
-    final message = _selectedFilter == 'All' &&
+    final message =
+        _selectedFilter == 'All' &&
             _selectedPriorityFilter == 'All' &&
             _selectedAreaFilter.isEmpty
         ? 'No reports found'

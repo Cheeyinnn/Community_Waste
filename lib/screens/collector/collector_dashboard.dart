@@ -8,10 +8,7 @@ enum ProgressFilter { today, week, month, all }
 class CollectorDashboardScreen extends StatefulWidget {
   final Function(String filter) onNavigateToTasks;
 
-  const CollectorDashboardScreen({
-    super.key,
-    required this.onNavigateToTasks,
-  });
+  const CollectorDashboardScreen({super.key, required this.onNavigateToTasks});
 
   @override
   State<CollectorDashboardScreen> createState() =>
@@ -54,8 +51,11 @@ class _CollectorDashboardScreenState extends State<CollectorDashboardScreen> {
         }).toList();
 
       case ProgressFilter.week:
-        final start = DateTime(now.year, now.month, now.day)
-            .subtract(Duration(days: now.weekday - 1));
+        final start = DateTime(
+          now.year,
+          now.month,
+          now.day,
+        ).subtract(Duration(days: now.weekday - 1));
         final end = start.add(const Duration(days: 7));
         return reports.where((r) {
           final created = r.createdAt.toDate();
@@ -117,23 +117,28 @@ class _CollectorDashboardScreenState extends State<CollectorDashboardScreen> {
             final reports = snapshot.data ?? [];
 
             final totalTasks = reports.length;
-            final assignedCount =
-                reports.where((r) => r.status == 'Assigned').length;
-            final inProgressCount =
-                reports.where((r) => r.status == 'In Progress').length;
-            final resolvedCount =
-                reports.where((r) => r.status == 'Resolved').length;
+            final assignedCount = reports
+                .where((r) => r.status == 'Assigned')
+                .length;
+            final inProgressCount = reports
+                .where((r) => r.status == 'In Progress')
+                .length;
+            final resolvedCount = reports
+                .where((r) => r.status == 'Resolved')
+                .length;
 
             final pendingTasks = totalTasks - resolvedCount;
 
             final filteredReports = _getFilteredReports(reports);
             final filteredTotal = filteredReports.length;
-            final filteredResolved =
-                filteredReports.where((r) => r.status == 'Resolved').length;
+            final filteredResolved = filteredReports
+                .where((r) => r.status == 'Resolved')
+                .length;
             final filteredPending = filteredTotal - filteredResolved;
 
-            final completionRate =
-                filteredTotal == 0 ? 0.0 : filteredResolved / filteredTotal;
+            final completionRate = filteredTotal == 0
+                ? 0.0
+                : filteredResolved / filteredTotal;
 
             return SingleChildScrollView(
               key: const PageStorageKey<String>('collector_dashboard_scroll'),
@@ -160,7 +165,7 @@ class _CollectorDashboardScreenState extends State<CollectorDashboardScreen> {
                           Icons.person,
                           color: Colors.orange.shade700,
                         ),
-                      )
+                      ),
                     ],
                   ),
                   const SizedBox(height: 20),
@@ -183,7 +188,7 @@ class _CollectorDashboardScreenState extends State<CollectorDashboardScreen> {
                           color: Colors.orange.withOpacity(0.3),
                           blurRadius: 15,
                           offset: const Offset(0, 8),
-                        )
+                        ),
                       ],
                     ),
                     child: Column(
@@ -199,15 +204,15 @@ class _CollectorDashboardScreenState extends State<CollectorDashboardScreen> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                        pendingTasks == 0
-                            ? 'You have no active task right now. Great work keeping the community clean!'
-                            : 'You have $pendingTasks active task(s) to complete. Let’s keep the community clean!',
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.9),
-                          fontSize: 14,
-                          height: 1.4,
+                          pendingTasks == 0
+                              ? 'You have no active task right now. Great work keeping the community clean!'
+                              : 'You have $pendingTasks active task(s) to complete. Let’s keep the community clean!',
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.9),
+                            fontSize: 14,
+                            height: 1.4,
+                          ),
                         ),
-                      ),
                       ],
                     ),
                   ),
@@ -394,7 +399,7 @@ class _CollectorDashboardScreenState extends State<CollectorDashboardScreen> {
               color: Colors.black.withOpacity(0.03),
               blurRadius: 15,
               offset: const Offset(0, 5),
-            )
+            ),
           ],
         ),
         child: Column(
@@ -470,10 +475,7 @@ class _CollectorDashboardScreenState extends State<CollectorDashboardScreen> {
                 const SizedBox(height: 2),
                 Text(
                   value,
-                  style: TextStyle(
-                    color: Colors.grey.shade500,
-                    fontSize: 12,
-                  ),
+                  style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
                 ),
               ],
             ),

@@ -14,8 +14,7 @@ class NotificationService {
         .snapshots()
         .map(
           (snapshot) => snapshot.docs
-              .map((doc) =>
-                  AppNotification.fromMap(doc.data(), doc.id))
+              .map((doc) => AppNotification.fromMap(doc.data(), doc.id))
               .toList(),
         );
   }

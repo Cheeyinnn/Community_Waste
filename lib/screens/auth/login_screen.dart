@@ -83,30 +83,24 @@ class _LoginScreenState extends State<LoginScreen> {
       if (role == 'admin') {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(
-            builder: (_) => const AdminMainScreen(),
-          ),
+          MaterialPageRoute(builder: (_) => const AdminMainScreen()),
         );
       } else if (role == 'collector') {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(
-            builder: (_) => const CollectorMainScreen(),
-          ),
+          MaterialPageRoute(builder: (_) => const CollectorMainScreen()),
         );
       } else {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(
-            builder: (_) => const UserMain(),
-          ),
+          MaterialPageRoute(builder: (_) => const UserMain()),
         );
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Login failed: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Login failed: $e')));
     } finally {
       if (mounted) {
         setState(() {
@@ -116,10 +110,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  InputDecoration _inputDecoration({
-    required String hint,
-    Widget? suffixIcon,
-  }) {
+  InputDecoration _inputDecoration({required String hint, Widget? suffixIcon}) {
     return InputDecoration(
       hintText: hint,
       filled: true,
@@ -136,10 +127,7 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide(
-          color: _primaryColor,
-          width: 1.5,
-        ),
+        borderSide: BorderSide(color: _primaryColor, width: 1.5),
       ),
     );
   }
@@ -228,9 +216,7 @@ class _LoginScreenState extends State<LoginScreen> {
             : () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(
-                    builder: (_) => const RegisterScreen(),
-                  ),
+                  MaterialPageRoute(builder: (_) => const RegisterScreen()),
                 );
               },
         child: const Text(
@@ -295,8 +281,10 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
             Center(
               child: SingleChildScrollView(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 20,
+                ),
                 child: Column(
                   children: [
                     const Text(

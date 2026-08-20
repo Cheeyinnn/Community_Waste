@@ -109,10 +109,7 @@ class _AdminMainScreenState extends State<AdminMainScreen> {
         backgroundColor: const Color(0xFFEFF6FF),
         body: SafeArea(
           bottom: false,
-          child: IndexedStack(
-            index: _index,
-            children: pages,
-          ),
+          child: IndexedStack(index: _index, children: pages),
         ),
         bottomNavigationBar: CurvedNavigationBar(
           key: _bottomNavigationKey,
@@ -125,26 +122,14 @@ class _AdminMainScreenState extends State<AdminMainScreen> {
           animationDuration: const Duration(milliseconds: 300),
           onTap: _onItemTapped,
           items: const <Widget>[
-            Icon(
-              Icons.dashboard_outlined,
-              size: 28,
-              color: Colors.white,
-            ),
+            Icon(Icons.dashboard_outlined, size: 28, color: Colors.white),
             Icon(
               Icons.format_list_bulleted_rounded,
               size: 28,
               color: Colors.white,
             ),
-            Icon(
-              Icons.map_outlined,
-              size: 28,
-              color: Colors.white,
-            ),
-            Icon(
-              Icons.person_outline_rounded,
-              size: 28,
-              color: Colors.white,
-            ),
+            Icon(Icons.map_outlined, size: 28, color: Colors.white),
+            Icon(Icons.person_outline_rounded, size: 28, color: Colors.white),
           ],
         ),
       ),

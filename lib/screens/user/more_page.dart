@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../services/auth_service.dart';
 import 'report_list_screen.dart';
-import '../auth/profile_page.dart'; 
+import '../auth/profile_page.dart';
 
 class MorePage extends StatelessWidget {
   const MorePage({super.key});
@@ -11,7 +11,9 @@ class MorePage extends StatelessWidget {
     final AuthService authService = AuthService();
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F9FC), // Matches your cool background theme
+      backgroundColor: const Color(
+        0xFFF7F9FC,
+      ), // Matches your cool background theme
       appBar: AppBar(
         title: const Text(
           "Menu",
@@ -27,13 +29,16 @@ class MorePage extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(20, 10, 20, 100),
         physics: const ClampingScrollPhysics(),
         children: [
-          
           /// --- ACCOUNT GROUP ---
           const Padding(
             padding: EdgeInsets.only(left: 8, bottom: 10),
             child: Text(
               "Account",
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.grey),
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey,
+              ),
             ),
           ),
           _buildMenuGroup(
@@ -48,9 +53,7 @@ class MorePage extends StatelessWidget {
                   // Navigates to the new Profile Page
                   Navigator.push(
                     context,
-                    MaterialPageRoute(
-                      builder: (_) => const ProfilePage(),
-                    ),
+                    MaterialPageRoute(builder: (_) => const ProfilePage()),
                   );
                 },
               ),
@@ -64,9 +67,7 @@ class MorePage extends StatelessWidget {
                 onTap: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(
-                      builder: (_) => ReportListScreen(),
-                    ),
+                    MaterialPageRoute(builder: (_) => ReportListScreen()),
                   );
                 },
               ),
@@ -80,7 +81,11 @@ class MorePage extends StatelessWidget {
             padding: EdgeInsets.only(left: 8, bottom: 10),
             child: Text(
               "Resources",
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.grey),
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey,
+              ),
             ),
           ),
           _buildMenuGroup(
@@ -113,9 +118,14 @@ class MorePage extends StatelessWidget {
                         color: Colors.green.shade50,
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: Icon(Icons.eco_rounded, color: Colors.green.shade600, size: 40),
+                      child: Icon(
+                        Icons.eco_rounded,
+                        color: Colors.green.shade600,
+                        size: 40,
+                      ),
                     ),
-                    applicationLegalese: "Developed for community waste reporting.",
+                    applicationLegalese:
+                        "Developed for community waste reporting.",
                   );
                 },
               ),
@@ -135,7 +145,11 @@ class MorePage extends StatelessWidget {
               icon: const Icon(Icons.logout_rounded, color: Colors.red),
               label: const Text(
                 "Log Out",
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.red),
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.red,
+                ),
               ),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.white,
@@ -165,15 +179,13 @@ class MorePage extends StatelessWidget {
             color: Colors.black.withOpacity(0.03),
             blurRadius: 15,
             offset: const Offset(0, 5),
-          )
+          ),
         ],
       ),
       // ClipRRect ensures that the InkWell ripple effect doesn't spill out of the rounded corners
       child: ClipRRect(
         borderRadius: BorderRadius.circular(24),
-        child: Column(
-          children: children,
-        ),
+        child: Column(children: children),
       ),
     );
   }
@@ -181,7 +193,10 @@ class MorePage extends StatelessWidget {
   /// Helper widget for a subtle divider between items
   Widget _buildDivider() {
     return Padding(
-      padding: const EdgeInsets.only(left: 70, right: 20), // Aligns perfectly with text
+      padding: const EdgeInsets.only(
+        left: 70,
+        right: 20,
+      ), // Aligns perfectly with text
       child: Divider(height: 1, color: Colors.grey.shade100),
     );
   }
@@ -236,7 +251,11 @@ class MorePage extends StatelessWidget {
                   ],
                 ),
               ),
-              Icon(Icons.arrow_forward_ios_rounded, size: 16, color: Colors.grey.shade400),
+              Icon(
+                Icons.arrow_forward_ios_rounded,
+                size: 16,
+                color: Colors.grey.shade400,
+              ),
             ],
           ),
         ),
@@ -254,7 +273,10 @@ class MorePage extends StatelessWidget {
           children: [
             Icon(Icons.tips_and_updates_rounded, color: Colors.orange.shade500),
             const SizedBox(width: 10),
-            const Text("Waste Tips", style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text(
+              "Waste Tips",
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
           ],
         ),
         content: Column(
@@ -262,9 +284,15 @@ class MorePage extends StatelessWidget {
           children: [
             _buildTipRow(Icons.recycling_rounded, "Separate recyclable waste"),
             const SizedBox(height: 12),
-            _buildTipRow(Icons.delete_sweep_rounded, "Dispose bulky waste correctly"),
+            _buildTipRow(
+              Icons.delete_sweep_rounded,
+              "Dispose bulky waste correctly",
+            ),
             const SizedBox(height: 12),
-            _buildTipRow(Icons.do_not_disturb_alt_rounded, "Avoid illegal dumping"),
+            _buildTipRow(
+              Icons.do_not_disturb_alt_rounded,
+              "Avoid illegal dumping",
+            ),
             const SizedBox(height: 12),
             _buildTipRow(Icons.eco_rounded, "Help keep your community clean"),
           ],
@@ -272,8 +300,11 @@ class MorePage extends StatelessWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text("Got it!", style: TextStyle(fontWeight: FontWeight.bold)),
-          )
+            child: const Text(
+              "Got it!",
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
         ],
       ),
     );
@@ -289,7 +320,11 @@ class MorePage extends StatelessWidget {
         Expanded(
           child: Text(
             text,
-            style: const TextStyle(fontSize: 14, color: Colors.black87, height: 1.3),
+            style: const TextStyle(
+              fontSize: 14,
+              color: Colors.black87,
+              height: 1.3,
+            ),
           ),
         ),
       ],

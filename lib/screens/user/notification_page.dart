@@ -53,10 +53,7 @@ class _NotificationPageState extends State<NotificationPage> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => ReportDetailScreen(
-          report: report,
-          isAdmin: false,
-        ),
+        builder: (_) => ReportDetailScreen(report: report, isAdmin: false),
       ),
     );
   }
@@ -81,10 +78,7 @@ class _NotificationPageState extends State<NotificationPage> {
           ),
           title: const Text(
             "Notifications",
-            style: TextStyle(
-              fontWeight: FontWeight.w700,
-              fontSize: 22,
-            ),
+            style: TextStyle(fontWeight: FontWeight.w700, fontSize: 22),
           ),
           backgroundColor: Colors.transparent,
           elevation: 0,
@@ -92,9 +86,7 @@ class _NotificationPageState extends State<NotificationPage> {
           foregroundColor: Colors.black87,
         ),
         body: user == null
-            ? const Center(
-                child: Text("Please log in to see updates"),
-              )
+            ? const Center(child: Text("Please log in to see updates"))
             : StreamBuilder<List<WasteReport>>(
                 stream: firestoreService.getUserReports(user.uid),
                 builder: (context, snapshot) {
@@ -115,10 +107,9 @@ class _NotificationPageState extends State<NotificationPage> {
 
                   final reports = snapshot.data ?? [];
 
-                  final updates = reports
-                      .where((r) => r.status != 'Pending')
-                      .toList()
-                    ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+                  final updates =
+                      reports.where((r) => r.status != 'Pending').toList()
+                        ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
 
                   if (updates.isEmpty) {
                     return _buildEmptyState();
@@ -129,10 +120,7 @@ class _NotificationPageState extends State<NotificationPage> {
                     physics: const ClampingScrollPhysics(),
                     itemCount: updates.length,
                     itemBuilder: (context, index) {
-                      return _buildNotificationCard(
-                        context,
-                        updates[index],
-                      );
+                      return _buildNotificationCard(context, updates[index]);
                     },
                   );
                 },
@@ -175,9 +163,9 @@ class _NotificationPageState extends State<NotificationPage> {
     String dateString = "-";
 
     try {
-      dateString = DateFormat('MMM d, h:mm a').format(
-        report.updatedAt.toDate(),
-      );
+      dateString = DateFormat(
+        'MMM d, h:mm a',
+      ).format(report.updatedAt.toDate());
     } catch (e) {
       dateString = "-";
     }
@@ -212,11 +200,7 @@ class _NotificationPageState extends State<NotificationPage> {
                       color: themeColor.withOpacity(0.1),
                       shape: BoxShape.circle,
                     ),
-                    child: Icon(
-                      iconData,
-                      color: themeColor,
-                      size: 24,
-                    ),
+                    child: Icon(iconData, color: themeColor, size: 24),
                   ),
                   const SizedBox(width: 16),
                   Expanded(
@@ -296,9 +280,7 @@ class _NotificationPageState extends State<NotificationPage> {
           Text(
             "You'll get notified when your\nreports are updated.",
             textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.grey.shade500,
-            ),
+            style: TextStyle(color: Colors.grey.shade500),
           ),
         ],
       ),
