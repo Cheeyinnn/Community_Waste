@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+
 import '../../services/auth_service.dart';
+import 'verify_email_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -15,6 +17,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _confirmPasswordController = TextEditingController();
 
   final AuthService _authService = AuthService();
+
   bool _isLoading = false;
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
@@ -35,16 +38,25 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return;
     }
 
+    if (!email.contains('@') || !email.contains('.')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter a valid email address')),
+      );
+      return;
+    }
+
     if (password != confirmPassword) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Passwords do not match')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Passwords do not match')),
+      );
       return;
     }
 
     if (password.length < 6) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Password must be at least 6 characters')),
+        const SnackBar(
+          content: Text('Password must be at least 6 characters'),
+        ),
       );
       return;
     }
@@ -52,21 +64,48 @@ class _RegisterScreenState extends State<RegisterScreen> {
     setState(() => _isLoading = true);
 
     try {
-      await _authService.register(name: name, email: email, password: password);
+      final credential = await _authService.register(
+        name: name,
+        email: email,
+        password: password,
+      );
+
+      final user = credential.user;
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Registration successful')));
+      if (user == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Account was created, but the user session could not be found.',
+            ),
+          ),
+        );
+        return;
+      }
 
-      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Account created. Please verify your email.'),
+          backgroundColor: Color(0xFF35C76F),
+        ),
+      );
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => VerifyEmailScreen(
+            email: user.email ?? email,
+          ),
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Register failed: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Register failed: $e')),
+      );
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -98,7 +137,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: Color(0xFF35C76F), width: 1.5),
+        borderSide: const BorderSide(
+          color: Color(0xFF35C76F),
+          width: 1.5,
+        ),
       ),
     );
   }
@@ -208,16 +250,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            'Register as a user to report community waste easily.',
+                            'All new accounts start as a normal user. '
+                            'A verification link will be sent to your email.',
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               fontSize: 13,
+                              height: 1.4,
                               color: Colors.grey.shade600,
                             ),
                           ),
                           const SizedBox(height: 22),
                           TextField(
                             controller: _nameController,
+                            textInputAction: TextInputAction.next,
                             decoration: _inputDecoration(
                               hint: 'Full Name',
                               prefixIcon: Icons.person_outline_rounded,
@@ -227,6 +272,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           TextField(
                             controller: _emailController,
                             keyboardType: TextInputType.emailAddress,
+                            textInputAction: TextInputAction.next,
+                            autocorrect: false,
                             decoration: _inputDecoration(
                               hint: 'Email Address',
                               prefixIcon: Icons.email_outlined,
@@ -236,6 +283,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           TextField(
                             controller: _passwordController,
                             obscureText: _obscurePassword,
+                            textInputAction: TextInputAction.next,
                             decoration: _inputDecoration(
                               hint: 'Password',
                               prefixIcon: Icons.lock_outline_rounded,
@@ -258,6 +306,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           TextField(
                             controller: _confirmPasswordController,
                             obscureText: _obscureConfirmPassword,
+                            textInputAction: TextInputAction.done,
+                            onSubmitted: (_) {
+                              if (!_isLoading) {
+                                _register();
+                              }
+                            },
                             decoration: _inputDecoration(
                               hint: 'Confirm Password',
                               prefixIcon: Icons.lock_reset_rounded,

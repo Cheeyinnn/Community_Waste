@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 
+import '../../models/collection_area.dart';
+import '../../models/collection_event.dart';
 import '../../models/collection_schedule.dart';
+import '../../services/collection_event_service.dart';
 import '../../services/collection_schedule_service.dart';
 
 class CollectionScheduleScreen extends StatefulWidget {
@@ -13,19 +16,20 @@ class CollectionScheduleScreen extends StatefulWidget {
       _CollectionScheduleScreenState();
 }
 
-class _CollectionScheduleScreenState extends State<CollectionScheduleScreen>
-    with AutomaticKeepAliveClientMixin {
+class _CollectionScheduleScreenState
+    extends State<CollectionScheduleScreen>
+    with AutomaticKeepAliveClientMixin<CollectionScheduleScreen> {
   final CollectionScheduleService _scheduleService =
       CollectionScheduleService();
 
-  List<String> _areas = [];
+  final CollectionEventService _eventService =
+      CollectionEventService();
 
-  String? _selectedArea;
+  List<CollectionArea> _areas = [];
+  CollectionArea? _selectedArea;
 
   bool _isLoadingAreas = true;
   bool _isDetectingLocation = false;
-
-  bool _userChangedArea = false;
 
   String _locationMessage = '';
 
@@ -35,33 +39,41 @@ class _CollectionScheduleScreenState extends State<CollectionScheduleScreen>
   @override
   void initState() {
     super.initState();
-
     _loadAreas();
   }
 
   // ============================================================
-  // LOAD AVAILABLE AREAS
+  // LOAD AREAS + SAVED USER AREA
   // ============================================================
 
   Future<void> _loadAreas() async {
     try {
       final areas = await _scheduleService.getAvailableAreas();
+      final savedArea = await _scheduleService.getSavedPreferredArea();
 
       if (!mounted) return;
 
+      CollectionArea? selectedArea;
+
+      if (savedArea != null) {
+        for (final area in areas) {
+          if (area.areaId == savedArea.areaId) {
+            selectedArea = area;
+            break;
+          }
+        }
+      }
+
       setState(() {
         _areas = areas;
-
-        if (_areas.isNotEmpty) {
-          _selectedArea = _areas.first;
-        }
-
+        _selectedArea = selectedArea;
         _isLoadingAreas = false;
-      });
 
-      if (_areas.isNotEmpty) {
-        await _detectAndSelectArea(showMessage: false, forceSelection: false);
-      }
+        if (selectedArea != null) {
+          _locationMessage =
+              'Using saved area: ${selectedArea.areaName}';
+        }
+      });
     } catch (e) {
       if (!mounted) return;
 
@@ -70,31 +82,89 @@ class _CollectionScheduleScreenState extends State<CollectionScheduleScreen>
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to load collection areas: $e')),
+        SnackBar(
+          content: Text(
+            'Failed to load collection areas: $e',
+          ),
+        ),
       );
     }
   }
 
   // ============================================================
-  // CURRENT LOCATION
+  // SELECT + SAVE AREA
   // ============================================================
 
-  Future<void> _detectAndSelectArea({
-    required bool showMessage,
-    required bool forceSelection,
+  Future<void> _selectArea(
+    CollectionArea area, {
+    String? message,
   }) async {
-    if (_isDetectingLocation) return;
+    if (!mounted) return;
 
     setState(() {
-      _isDetectingLocation = true;
-
-      if (showMessage) {
-        _locationMessage = 'Detecting your current area...';
-      }
+      _selectedArea = area;
+      _locationMessage =
+          message ?? 'Selected area: ${area.areaName}';
     });
 
     try {
-      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      await _scheduleService.savePreferredArea(area);
+    } catch (_) {
+      // Saving the preference is optional.
+      // The schedule still works even if this write fails.
+    }
+  }
+
+  // ============================================================
+  // SEARCHABLE AREA PICKER
+  // ============================================================
+
+  Future<void> _openAreaPicker() async {
+    if (_areas.isEmpty) {
+      return;
+    }
+
+    final selected = await showModalBottomSheet<CollectionArea>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return _AreaPickerSheet(
+          areas: _areas,
+          currentAreaId: _selectedArea?.areaId,
+          scheduleService: _scheduleService,
+        );
+      },
+    );
+
+    if (!mounted || selected == null) {
+      return;
+    }
+
+    await _selectArea(
+      selected,
+      message: 'Area set to ${selected.areaName}',
+    );
+  }
+
+  // ============================================================
+  // GPS
+  // ============================================================
+
+  Future<void> _detectAndSelectArea() async {
+    if (_isDetectingLocation) {
+      return;
+    }
+
+    setState(() {
+      _isDetectingLocation = true;
+      _locationMessage = 'Detecting your location...';
+    });
+
+    try {
+      final serviceEnabled =
+          await Geolocator.isLocationServiceEnabled();
 
       if (!serviceEnabled) {
         if (!mounted) return;
@@ -107,7 +177,8 @@ class _CollectionScheduleScreenState extends State<CollectionScheduleScreen>
         return;
       }
 
-      LocationPermission permission = await Geolocator.checkPermission();
+      LocationPermission permission =
+          await Geolocator.checkPermission();
 
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
@@ -118,7 +189,7 @@ class _CollectionScheduleScreenState extends State<CollectionScheduleScreen>
 
         setState(() {
           _locationMessage =
-              'Location permission was denied. You can still select an area manually.';
+              'Location permission was denied. Search your area manually.';
         });
 
         return;
@@ -129,7 +200,7 @@ class _CollectionScheduleScreenState extends State<CollectionScheduleScreen>
 
         setState(() {
           _locationMessage =
-              'Location permission is permanently denied. Please enable it in your phone settings.';
+              'Location permission is permanently denied. Enable it in phone settings.';
         });
 
         return;
@@ -148,83 +219,83 @@ class _CollectionScheduleScreenState extends State<CollectionScheduleScreen>
         if (!mounted) return;
 
         setState(() {
-          _locationMessage = 'Unable to identify your current collection area.';
+          _locationMessage =
+              'GPS was found, but the address could not be identified.';
         });
 
         return;
       }
 
-      final place = placemarks.first;
+      // Only Perak is supported.
+      final stateNames = placemarks
+          .map(
+            (place) =>
+                (place.administrativeArea ?? '').trim(),
+          )
+          .where((value) => value.isNotEmpty)
+          .toList();
 
-      final detectedState = (place.administrativeArea ?? '').trim();
-
-      // Only Perak schedules are supported.
-      if (!detectedState.toLowerCase().contains('perak')) {
+      if (stateNames.isNotEmpty &&
+          !stateNames.any(
+            (value) =>
+                value.toLowerCase().contains('perak'),
+          )) {
         if (!mounted) return;
 
         setState(() {
           _locationMessage =
-              'Your current location is outside Perak. Please select a Perak area manually.';
+              'Your current location appears to be outside Perak.';
         });
 
         return;
       }
 
-      // Collect all useful names returned by GPS/geocoding.
-      final detectedNames = <String>[
-        place.name ?? '',
-        place.street ?? '',
-        place.subLocality ?? '',
-        place.locality ?? '',
-        place.subAdministrativeArea ?? '',
-        place.administrativeArea ?? '',
-      ].where((name) => name.trim().isNotEmpty).toList();
+      final detectedNames =
+          _buildDetectedSearchNames(placemarks);
 
-      // Firebase decides which main schedule area the locality belongs to.
-      final matchedArea = await _scheduleService.findScheduleAreaFromLocation(
+      final matchedArea =
+          await _scheduleService.findCollectionAreaFromLocation(
         detectedNames,
       );
 
       if (!mounted) return;
 
-      final detectedLocationName = _getReadableDetectedArea(place);
+      final readableAddress =
+          _buildReadableDetectedAddress(placemarks);
 
-      if (matchedArea != null && _areas.contains(matchedArea)) {
-        if (forceSelection || !_userChangedArea) {
-          setState(() {
-            _selectedArea = matchedArea;
+      if (matchedArea != null) {
+        await _selectArea(
+          matchedArea,
+          message: readableAddress.isEmpty
+              ? 'Location matched to ${matchedArea.areaName}'
+              : '$readableAddress → ${matchedArea.areaName}',
+        );
 
-            _locationMessage = detectedLocationName.isNotEmpty
-                ? 'Detected: $detectedLocationName → $matchedArea collection area'
-                : 'Your current collection area: $matchedArea, Perak';
-          });
-        } else {
-          setState(() {
-            _locationMessage = detectedLocationName.isNotEmpty
-                ? 'Detected location: $detectedLocationName ($matchedArea area)'
-                : 'Detected collection area: $matchedArea';
-          });
-        }
-      } else {
-        setState(() {
-          _locationMessage = detectedLocationName.isNotEmpty
-              ? 'Your location was detected as $detectedLocationName, but no matching collection schedule area is available yet.'
-              : 'Your location is within Perak, but no matching collection schedule area is available yet.';
-        });
+        return;
       }
+
+      setState(() {
+        if (readableAddress.isEmpty) {
+          _locationMessage =
+              'GPS could not identify your exact collection area. Search manually.';
+        } else {
+          _locationMessage =
+              '$readableAddress • exact collection area not found';
+        }
+      });
     } catch (e) {
       if (!mounted) return;
 
       setState(() {
         _locationMessage =
-            'Unable to detect your location. You can select an area manually.';
+            'Unable to identify the exact collection area from GPS.';
       });
 
-      if (showMessage) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Location error: $e')));
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Location error: $e'),
+        ),
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -235,51 +306,307 @@ class _CollectionScheduleScreenState extends State<CollectionScheduleScreen>
   }
 
   // ============================================================
-  // DISPLAY DETECTED LOCALITY
+  // GPS SEARCH DATA
+  //
+  // House numbers are not used for matching.
+  // Street / taman / landmark names are used instead.
   // ============================================================
 
-  String _getReadableDetectedArea(Placemark place) {
-    final values = [
-      place.subLocality,
-      place.locality,
-      place.subAdministrativeArea,
-      place.name,
-    ];
+  List<String> _buildDetectedSearchNames(
+    List<Placemark> placemarks,
+  ) {
+    final names = <String>{};
 
-    for (final value in values) {
-      if (value != null && value.trim().isNotEmpty) {
-        return value.trim();
+    for (final place in placemarks) {
+      final values = <String?>[
+        place.name,
+        place.street,
+        place.thoroughfare,
+        place.subThoroughfare,
+        place.subLocality,
+        place.locality,
+        place.subAdministrativeArea,
+        place.administrativeArea,
+      ];
+
+      for (final value in values) {
+        if (value == null) {
+          continue;
+        }
+
+        final text = value.trim();
+
+        if (_isUsefulTextForAreaMatching(text)) {
+          names.add(text);
+        }
+      }
+
+      final street = _firstUsefulText(
+        [
+          place.street,
+          place.thoroughfare,
+        ],
+        allowKampar: false,
+      );
+
+      final subLocality = _firstUsefulText(
+        [place.subLocality],
+        allowKampar: false,
+      );
+
+      final locality = _firstUsefulText(
+        [place.locality],
+        allowKampar: true,
+      );
+
+      if (street.isNotEmpty && subLocality.isNotEmpty) {
+        names.add('$street $subLocality');
+      }
+
+      if (street.isNotEmpty && locality.isNotEmpty) {
+        names.add('$street $locality');
+      }
+
+      if (subLocality.isNotEmpty && locality.isNotEmpty) {
+        names.add('$subLocality $locality');
+      }
+    }
+
+    return names.toList();
+  }
+
+  bool _isUsefulTextForAreaMatching(String value) {
+    final text = value.trim();
+
+    if (text.isEmpty) {
+      return false;
+    }
+
+    // Ignore house numbers / numeric-only values.
+    if (!RegExp(r'[A-Za-z]').hasMatch(text)) {
+      return false;
+    }
+
+    const ignored = <String>{
+      'malaysia',
+      'perak',
+      'perak darul ridzuan',
+      'kampar',
+      'daerah kampar',
+      'kampar district',
+    };
+
+    return !ignored.contains(text.toLowerCase());
+  }
+
+  // ============================================================
+  // READABLE ADDRESS
+  //
+  // A house number may be shown to the user, but only together
+  // with useful street / locality information.
+  // ============================================================
+
+  String _buildReadableDetectedAddress(
+    List<Placemark> placemarks,
+  ) {
+    for (final place in placemarks) {
+      final parts = <String>[];
+
+      final rawName = (place.name ?? '').trim();
+
+      final street = _firstUsefulText(
+        [
+          place.street,
+          place.thoroughfare,
+        ],
+        allowKampar: false,
+      );
+
+      final subLocality = _firstUsefulText(
+        [place.subLocality],
+        allowKampar: false,
+      );
+
+      final locality = _firstUsefulText(
+        [
+          place.locality,
+          place.subAdministrativeArea,
+        ],
+        allowKampar: true,
+      );
+
+      final state = _firstUsefulText(
+        [place.administrativeArea],
+        allowKampar: true,
+      );
+
+      if (_looksLikeHouseNumber(rawName) &&
+          street.isNotEmpty) {
+        parts.add(rawName);
+      } else if (_isUsefulReadableText(rawName) &&
+          !_sameText(rawName, street) &&
+          !_sameText(rawName, subLocality) &&
+          !_sameText(rawName, locality)) {
+        parts.add(rawName);
+      }
+
+      if (street.isNotEmpty) {
+        parts.add(street);
+      }
+
+      if (subLocality.isNotEmpty &&
+          !_containsSamePart(parts, subLocality)) {
+        parts.add(subLocality);
+      }
+
+      if (locality.isNotEmpty &&
+          !_containsSamePart(parts, locality)) {
+        parts.add(locality);
+      }
+
+      if (state.isNotEmpty &&
+          !_containsSamePart(parts, state)) {
+        parts.add(state);
+      }
+
+      final cleaned = _uniqueParts(parts);
+
+      if (cleaned.isNotEmpty) {
+        return cleaned.join(', ');
       }
     }
 
     return '';
   }
 
+  String _firstUsefulText(
+    List<String?> values, {
+    required bool allowKampar,
+  }) {
+    for (final value in values) {
+      final text = value?.trim() ?? '';
+
+      if (text.isEmpty) {
+        continue;
+      }
+
+      if (!RegExp(r'[A-Za-z]').hasMatch(text)) {
+        continue;
+      }
+
+      final lower = text.toLowerCase();
+
+      if (lower == 'malaysia' ||
+          lower == 'perak darul ridzuan') {
+        continue;
+      }
+
+      if (!allowKampar &&
+          (lower == 'kampar' ||
+              lower == 'daerah kampar' ||
+              lower == 'kampar district')) {
+        continue;
+      }
+
+      return text;
+    }
+
+    return '';
+  }
+
+  bool _isUsefulReadableText(String value) {
+    final text = value.trim();
+
+    if (text.isEmpty) {
+      return false;
+    }
+
+    if (!RegExp(r'[A-Za-z]').hasMatch(text)) {
+      return false;
+    }
+
+    const ignored = <String>{
+      'malaysia',
+      'perak darul ridzuan',
+      'kampar district',
+      'daerah kampar',
+    };
+
+    return !ignored.contains(text.toLowerCase());
+  }
+
+  bool _looksLikeHouseNumber(String value) {
+    final text = value.trim();
+
+    if (text.isEmpty) {
+      return false;
+    }
+
+    return RegExp(
+      r'^\d+[A-Za-z]?(?:[-/]\d+[A-Za-z]?)?$',
+    ).hasMatch(text);
+  }
+
+  bool _sameText(String a, String b) {
+    return a.trim().toLowerCase() ==
+        b.trim().toLowerCase();
+  }
+
+  bool _containsSamePart(
+    List<String> parts,
+    String value,
+  ) {
+    final lower = value.trim().toLowerCase();
+
+    return parts.any(
+      (part) => part.trim().toLowerCase() == lower,
+    );
+  }
+
+  List<String> _uniqueParts(List<String> parts) {
+    final result = <String>[];
+    final seen = <String>{};
+
+    for (final part in parts) {
+      final text = part.trim();
+
+      if (text.isEmpty) {
+        continue;
+      }
+
+      if (seen.add(text.toLowerCase())) {
+        result.add(text);
+      }
+    }
+
+    return result;
+  }
+
   // ============================================================
-  // DAY
+  // DATE / TIME
   // ============================================================
 
   String _getDayName(int day) {
     switch (day) {
-      case 1:
+      case DateTime.monday:
         return 'Monday';
 
-      case 2:
+      case DateTime.tuesday:
         return 'Tuesday';
 
-      case 3:
+      case DateTime.wednesday:
         return 'Wednesday';
 
-      case 4:
+      case DateTime.thursday:
         return 'Thursday';
 
-      case 5:
+      case DateTime.friday:
         return 'Friday';
 
-      case 6:
+      case DateTime.saturday:
         return 'Saturday';
 
-      case 7:
+      case DateTime.sunday:
         return 'Sunday';
 
       default:
@@ -287,61 +614,33 @@ class _CollectionScheduleScreenState extends State<CollectionScheduleScreen>
     }
   }
 
-  // ============================================================
-  // TIME
-  // ============================================================
-
-  String _formatTime(int hour, int minute) {
-    final time = TimeOfDay(hour: hour, minute: minute);
-
-    return time.format(context);
+  String _formatTime(
+    int hour,
+    int minute,
+  ) {
+    return TimeOfDay(
+      hour: hour,
+      minute: minute,
+    ).format(context);
   }
 
-  // ============================================================
-  // COLLECTION START
-  // ============================================================
-
-  DateTime _getCollectionStart(CollectionSchedule schedule) {
-    final now = DateTime.now();
-
-    int daysUntil = schedule.dayOfWeek - now.weekday;
-
-    if (daysUntil < 0) {
-      daysUntil += 7;
-    }
-
-    DateTime start = DateTime(
-      now.year,
-      now.month,
-      now.day,
+  DateTime _createCollectionStart(
+    CollectionSchedule schedule,
+    DateTime date,
+  ) {
+    return DateTime(
+      date.year,
+      date.month,
+      date.day,
       schedule.startHour,
       schedule.startMinute,
-    ).add(Duration(days: daysUntil));
-
-    DateTime end = DateTime(
-      start.year,
-      start.month,
-      start.day,
-      schedule.endHour,
-      schedule.endMinute,
     );
-
-    if (!end.isAfter(start)) {
-      end = end.add(const Duration(days: 1));
-    }
-
-    if (daysUntil == 0 && now.isAfter(end)) {
-      start = start.add(const Duration(days: 7));
-    }
-
-    return start;
   }
 
-  // ============================================================
-  // COLLECTION END
-  // ============================================================
-
-  DateTime _getCollectionEnd(CollectionSchedule schedule, DateTime start) {
+  DateTime _getCollectionEnd(
+    CollectionSchedule schedule,
+    DateTime start,
+  ) {
     DateTime end = DateTime(
       start.year,
       start.month,
@@ -351,20 +650,20 @@ class _CollectionScheduleScreenState extends State<CollectionScheduleScreen>
     );
 
     if (!end.isAfter(start)) {
-      end = end.add(const Duration(days: 1));
+      end = end.add(
+        const Duration(days: 1),
+      );
     }
 
     return end;
   }
 
-  // ============================================================
-  // COLLECTION CURRENTLY RUNNING
-  // ============================================================
-
-  bool _isCollectionInProgress(CollectionSchedule schedule) {
+  bool _isCollectionInProgress(
+    CollectionSchedule schedule,
+  ) {
     final now = DateTime.now();
 
-    if (schedule.dayOfWeek != now.weekday) {
+    if (!schedule.collectsOnDay(now.weekday)) {
       return false;
     }
 
@@ -376,54 +675,74 @@ class _CollectionScheduleScreenState extends State<CollectionScheduleScreen>
       schedule.startMinute,
     );
 
-    DateTime end = DateTime(
-      now.year,
-      now.month,
-      now.day,
-      schedule.endHour,
-      schedule.endMinute,
+    final end = _getCollectionEnd(
+      schedule,
+      start,
     );
 
-    if (!end.isAfter(start)) {
-      end = end.add(const Duration(days: 1));
-    }
-
-    return !now.isBefore(start) && !now.isAfter(end);
+    return !now.isBefore(start) &&
+        !now.isAfter(end);
   }
 
-  // ============================================================
-  // FIND NEXT COLLECTION
-  // ============================================================
-
-  CollectionSchedule? _findNextCollection(List<CollectionSchedule> schedules) {
-    if (schedules.isEmpty) {
+  DateTime? _getNextCollectionStart(
+    CollectionSchedule schedule, {
+    CollectionEvent? todayEvent,
+  }) {
+    if (schedule.daysOfWeek.isEmpty) {
       return null;
     }
 
-    for (final schedule in schedules) {
-      if (_isCollectionInProgress(schedule)) {
-        return schedule;
+    final now = DateTime.now();
+
+    final today = DateTime(
+      now.year,
+      now.month,
+      now.day,
+    );
+
+    // If today's real collection has already reached a final state,
+    // today's schedule is no longer the "next" collection.
+    final todayFinished =
+        todayEvent?.isCollected == true ||
+        todayEvent?.isMissed == true;
+
+    for (int offset = 0; offset <= 7; offset++) {
+      final date = today.add(
+        Duration(days: offset),
+      );
+
+      if (!schedule.collectsOnDay(date.weekday)) {
+        continue;
       }
+
+      if (offset == 0 && todayFinished) {
+        continue;
+      }
+
+      final start = _createCollectionStart(
+        schedule,
+        date,
+      );
+
+      final end = _getCollectionEnd(
+        schedule,
+        start,
+      );
+
+      // If today's official collection window has already ended,
+      // move to the next scheduled collection day.
+      if (offset == 0 && now.isAfter(end)) {
+        continue;
+      }
+
+      return start;
     }
 
-    final sorted = List<CollectionSchedule>.from(schedules);
-
-    sorted.sort((a, b) {
-      final dateA = _getCollectionStart(a);
-      final dateB = _getCollectionStart(b);
-
-      return dateA.compareTo(dateB);
-    });
-
-    return sorted.first;
+    return null;
   }
 
-  // ============================================================
-  // DATE
-  // ============================================================
-
   String _formatDate(DateTime date) {
-    const months = [
+    const months = <String>[
       'January',
       'February',
       'March',
@@ -442,18 +761,84 @@ class _CollectionScheduleScreenState extends State<CollectionScheduleScreen>
         '${date.day} ${months[date.month - 1]}';
   }
 
-  String _getCollectionLabel(CollectionSchedule schedule, DateTime date) {
-    if (_isCollectionInProgress(schedule)) {
-      return 'Collection in progress';
+  String _formatSourceDate(String value) {
+    if (value.trim().isEmpty) {
+      return '';
     }
 
+    try {
+      final date = DateTime.parse(value);
+
+      const months = <String>[
+        'January',
+        'February',
+        'March',
+        'April',
+        'May',
+        'June',
+        'July',
+        'August',
+        'September',
+        'October',
+        'November',
+        'December',
+      ];
+
+      return '${date.day} '
+          '${months[date.month - 1]} '
+          '${date.year}';
+    } catch (_) {
+      return value;
+    }
+  }
+
+  String _formatEventTime(DateTime? date) {
+    if (date == null) {
+      return '';
+    }
+
+    return TimeOfDay.fromDateTime(
+      date.toLocal(),
+    ).format(context);
+  }
+
+  bool _isSameCalendarDay(
+    DateTime a,
+    DateTime b,
+  ) {
+    return a.year == b.year &&
+        a.month == b.month &&
+        a.day == b.day;
+  }
+
+  String _getCollectionLabel(
+    CollectionSchedule schedule,
+    DateTime collectionDate,
+  ) {
     final now = DateTime.now();
 
-    final today = DateTime(now.year, now.month, now.day);
+    if (_isSameCalendarDay(
+          collectionDate,
+          now,
+        ) &&
+        _isCollectionInProgress(schedule)) {
+      return 'Collection window active';
+    }
 
-    final collectionDay = DateTime(date.year, date.month, date.day);
+    final today = DateTime(
+      now.year,
+      now.month,
+      now.day,
+    );
 
-    final difference = collectionDay.difference(today).inDays;
+    final collectionDay = DateTime(
+      collectionDate.year,
+      collectionDate.month,
+      collectionDate.day,
+    );
+
+    final difference =
+        collectionDay.difference(today).inDays;
 
     if (difference == 0) {
       return 'Today';
@@ -467,130 +852,268 @@ class _CollectionScheduleScreenState extends State<CollectionScheduleScreen>
   }
 
   // ============================================================
-  // AREA SELECTOR
+  // TODAY STATUS
+  //
+  // Priority:
+  // 1. Actual collector event from Firestore
+  // 2. Official schedule window as fallback
   // ============================================================
 
-  Widget _buildAreaSelector() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.grey.shade200),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: _selectedArea,
-          isExpanded: true,
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 2),
-          borderRadius: BorderRadius.circular(18),
-          dropdownColor: Colors.white,
-          elevation: 8,
-          menuMaxHeight: 350,
-          icon: Icon(
-            Icons.keyboard_arrow_down_rounded,
-            color: Colors.grey.shade700,
-            size: 28,
-          ),
-          selectedItemBuilder: (context) {
-            return _areas.map((area) {
-              return Row(
-                children: [
-                  Icon(
-                    Icons.location_on_outlined,
-                    color: Colors.green.shade600,
-                    size: 22,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      '$area, Perak',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.black87,
-                      ),
-                    ),
-                  ),
-                ],
-              );
-            }).toList();
-          },
-          items: _areas.map((area) {
-            final bool isSelected = area == _selectedArea;
+  _TodayCollectionStatus _getTodayCollectionStatus(
+    CollectionSchedule schedule,
+    CollectionEvent? event,
+  ) {
+    final now = DateTime.now();
 
-            return DropdownMenuItem<String>(
-              value: area,
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 4,
-                  vertical: 10,
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 38,
-                      height: 38,
-                      decoration: BoxDecoration(
-                        color: isSelected
-                            ? Colors.green.shade100
-                            : Colors.green.shade50,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Icon(
-                        Icons.location_on_outlined,
-                        color: Colors.green.shade600,
-                        size: 21,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        '$area, Perak',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: isSelected
-                              ? FontWeight.w700
-                              : FontWeight.w600,
-                          color: Colors.black87,
-                        ),
-                      ),
-                    ),
-                    if (isSelected)
-                      Icon(
-                        Icons.check_circle_rounded,
-                        color: Colors.green.shade600,
-                        size: 21,
-                      ),
-                  ],
-                ),
-              ),
-            );
-          }).toList(),
-          onChanged: (value) {
-            if (value == null) return;
+    // ==========================================================
+    // ACTUAL COLLECTOR STATUS TAKES PRIORITY
+    // ==========================================================
 
-            setState(() {
-              _selectedArea = value;
-              _userChangedArea = true;
-              _locationMessage = '';
-            });
-          },
-        ),
-      ),
+    if (event != null) {
+      if (event.isCollected) {
+        final collectedTime =
+            _formatEventTime(event.collectedAt);
+
+        return _TodayCollectionStatus(
+          type: _TodayCollectionStatusType.collected,
+          title: 'Collected today',
+          message: collectedTime.isEmpty
+              ? 'Today\'s waste collection has been completed.'
+              : 'Collection completed at $collectedTime.',
+          icon: Icons.check_circle_outline_rounded,
+        );
+      }
+
+      if (event.isInProgress) {
+        final startedTime =
+            _formatEventTime(event.startedAt);
+
+        final start = DateTime(
+          now.year,
+          now.month,
+          now.day,
+          schedule.startHour,
+          schedule.startMinute,
+        );
+
+        final end = _getCollectionEnd(
+          schedule,
+          start,
+        );
+
+        final windowEnded = now.isAfter(end);
+
+        String message;
+
+        if (windowEnded) {
+          message = startedTime.isEmpty
+              ? 'The scheduled window has ended, but collection is still marked as in progress.'
+              : 'Started at $startedTime. The scheduled window has ended, but collection is still in progress.';
+        } else {
+          message = startedTime.isEmpty
+              ? 'The collection vehicle is currently servicing this area.'
+              : 'Started at $startedTime. The collection vehicle is currently servicing this area.';
+        }
+
+        return _TodayCollectionStatus(
+          type: _TodayCollectionStatusType.inProgress,
+          title: 'Collection in progress',
+          message: message,
+          icon: Icons.local_shipping_outlined,
+        );
+      }
+
+      if (event.isMissed) {
+        return const _TodayCollectionStatus(
+          type: _TodayCollectionStatusType.missed,
+          title: 'Collection missed today',
+          message:
+              'The collector marked today\'s scheduled collection as missed.',
+          icon: Icons.error_outline_rounded,
+        );
+      }
+
+      // A pending event still falls back to the official schedule.
+    }
+
+    // ==========================================================
+    // OFFICIAL SCHEDULE FALLBACK
+    // ==========================================================
+
+    if (!schedule.collectsOnDay(now.weekday)) {
+      return const _TodayCollectionStatus(
+        type: _TodayCollectionStatusType.notScheduled,
+        title: 'No collection scheduled today',
+        message: 'See the next scheduled collection above.',
+        icon: Icons.event_busy_outlined,
+      );
+    }
+
+    final start = DateTime(
+      now.year,
+      now.month,
+      now.day,
+      schedule.startHour,
+      schedule.startMinute,
+    );
+
+    final end = _getCollectionEnd(
+      schedule,
+      start,
+    );
+
+    if (now.isBefore(start)) {
+      return _TodayCollectionStatus(
+        type: _TodayCollectionStatusType.upcoming,
+        title: 'Scheduled later today',
+        message:
+            'Collection window starts at '
+            '${_formatTime(schedule.startHour, schedule.startMinute)}.',
+        icon: Icons.schedule_rounded,
+      );
+    }
+
+    if (!now.isAfter(end)) {
+      return _TodayCollectionStatus(
+        type: _TodayCollectionStatusType.active,
+        title: 'Collection window is active',
+        message:
+            'Vehicle may arrive any time before '
+            '${_formatTime(schedule.endHour, schedule.endMinute)}.',
+        icon: Icons.local_shipping_outlined,
+      );
+    }
+
+    return _TodayCollectionStatus(
+      type: _TodayCollectionStatusType.ended,
+      title: 'Today\'s window has ended',
+      message:
+          'Window ended at '
+          '${_formatTime(schedule.endHour, schedule.endMinute)}. '
+          'No completed collection has been confirmed yet.',
+      icon: Icons.history_rounded,
     );
   }
 
   // ============================================================
-  // USE MY LOCATION
+  // AREA SELECTOR
   // ============================================================
+
+  Widget _buildAreaSelector() {
+    final area = _selectedArea;
+
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        onTap: _openAreaPicker,
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          width: double.infinity,
+          constraints: const BoxConstraints(
+            minHeight: 76,
+          ),
+          padding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 12,
+          ),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: Colors.grey.shade200,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.035),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(
+                  area == null
+                      ? Icons.search_rounded
+                      : Icons.location_on_outlined,
+                  color: Colors.green.shade700,
+                ),
+              ),
+
+              const SizedBox(width: 13),
+
+              Expanded(
+                child: area == null
+                    ? Column(
+                        crossAxisAlignment:
+                            CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Search collection area',
+                            style: TextStyle(
+                              fontSize: 15.5,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.black87,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            'Search a taman, housing area or landmark',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
+                      )
+                    : Column(
+                        crossAxisAlignment:
+                            CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            area.areaName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 15.5,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.black87,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            '${area.zoneName} • ${area.district}, ${area.state}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
+                      ),
+              ),
+
+              const SizedBox(width: 8),
+
+              Icon(
+                Icons.keyboard_arrow_down_rounded,
+                size: 28,
+                color: Colors.grey.shade700,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   Widget _buildUseMyLocationButton() {
     return SizedBox(
@@ -598,23 +1121,31 @@ class _CollectionScheduleScreenState extends State<CollectionScheduleScreen>
       child: OutlinedButton.icon(
         onPressed: _isDetectingLocation
             ? null
-            : () {
-                _detectAndSelectArea(showMessage: true, forceSelection: true);
-              },
+            : _detectAndSelectArea,
         icon: _isDetectingLocation
             ? const SizedBox(
                 width: 18,
                 height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                ),
               )
-            : const Icon(Icons.my_location_rounded),
+            : const Icon(
+                Icons.my_location_rounded,
+              ),
         label: Text(
-          _isDetectingLocation ? 'Detecting Location...' : 'Use My Location',
+          _isDetectingLocation
+              ? 'Detecting Location...'
+              : 'Use My Location',
         ),
         style: OutlinedButton.styleFrom(
           foregroundColor: Colors.green.shade700,
-          side: BorderSide(color: Colors.green.shade200),
-          padding: const EdgeInsets.symmetric(vertical: 13),
+          side: BorderSide(
+            color: Colors.green.shade200,
+          ),
+          padding: const EdgeInsets.symmetric(
+            vertical: 13,
+          ),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(15),
           ),
@@ -624,7 +1155,7 @@ class _CollectionScheduleScreenState extends State<CollectionScheduleScreen>
   }
 
   // ============================================================
-  // LOCATION RESULT MESSAGE
+  // COMPACT LOCATION RESULT
   // ============================================================
 
   Widget _buildLocationMessage() {
@@ -634,37 +1165,45 @@ class _CollectionScheduleScreenState extends State<CollectionScheduleScreen>
 
     final lower = _locationMessage.toLowerCase();
 
-    final bool warning =
+    final warning =
         lower.contains('outside') ||
         lower.contains('denied') ||
         lower.contains('disabled') ||
-        lower.contains('no matching') ||
-        lower.contains('unable');
+        lower.contains('not found') ||
+        lower.contains('unable') ||
+        lower.contains('could not');
 
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(top: 10),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: warning ? Colors.orange.shade50 : Colors.green.shade50,
-        borderRadius: BorderRadius.circular(12),
+    final color = warning
+        ? Colors.orange.shade700
+        : Colors.green.shade700;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        4,
+        10,
+        4,
+        0,
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(
             warning
                 ? Icons.info_outline_rounded
                 : Icons.check_circle_outline_rounded,
-            color: warning ? Colors.orange.shade700 : Colors.green.shade700,
-            size: 18,
+            size: 17,
+            color: color,
           ),
-          const SizedBox(width: 8),
+
+          const SizedBox(width: 7),
+
           Expanded(
             child: Text(
               _locationMessage,
               style: TextStyle(
-                color: warning ? Colors.orange.shade800 : Colors.green.shade800,
-                fontSize: 12.5,
+                fontSize: 12,
+                height: 1.35,
+                color: color,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -675,35 +1214,53 @@ class _CollectionScheduleScreenState extends State<CollectionScheduleScreen>
   }
 
   // ============================================================
-  // NEXT COLLECTION
+  // MAIN CARD
+  //
+  // Next collection + today's status + zone are consolidated here.
   // ============================================================
 
-  Widget _buildNextCollectionCard(List<CollectionSchedule> schedules) {
-    final schedule = _findNextCollection(schedules);
+  Widget _buildMainCollectionCard(
+    CollectionArea area,
+    CollectionSchedule schedule,
+    CollectionEvent? todayEvent,
+  ) {
+    final startDate =
+        _getNextCollectionStart(
+      schedule,
+      todayEvent: todayEvent,
+    );
 
-    if (schedule == null) {
+    if (startDate == null) {
       return const SizedBox.shrink();
     }
 
-    final startDate = _getCollectionStart(schedule);
+    final endDate = _getCollectionEnd(
+      schedule,
+      startDate,
+    );
 
-    final endDate = _getCollectionEnd(schedule, startDate);
-
-    final inProgress = _isCollectionInProgress(schedule);
+    final todayStatus =
+        _getTodayCollectionStatus(
+      schedule,
+      todayEvent,
+    );
 
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [Color(0xFF35C76F), Color(0xFF26A65B)],
+          colors: [
+            Color(0xFF35C76F),
+            Color(0xFF26A65B),
+          ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: Colors.green.withOpacity(0.20),
+            color: Colors.green.withOpacity(0.18),
             blurRadius: 15,
             offset: const Offset(0, 6),
           ),
@@ -717,9 +1274,9 @@ class _CollectionScheduleScreenState extends State<CollectionScheduleScreen>
               Icon(
                 Icons.local_shipping_outlined,
                 color: Colors.white,
-                size: 25,
+                size: 24,
               ),
-              SizedBox(width: 10),
+              SizedBox(width: 9),
               Text(
                 'Next Collection',
                 style: TextStyle(
@@ -731,35 +1288,21 @@ class _CollectionScheduleScreenState extends State<CollectionScheduleScreen>
             ],
           ),
 
-          const SizedBox(height: 20),
+          const SizedBox(height: 18),
 
-          if (inProgress)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.20),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: const Text(
-                'COLLECTION IN PROGRESS',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            )
-          else
-            Text(
-              _getCollectionLabel(schedule, startDate),
-              style: const TextStyle(
-                color: Colors.white70,
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-              ),
+          Text(
+            _getCollectionLabel(
+              schedule,
+              startDate,
             ),
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
 
-          const SizedBox(height: 8),
+          const SizedBox(height: 5),
 
           Text(
             _formatDate(startDate),
@@ -770,45 +1313,363 @@ class _CollectionScheduleScreenState extends State<CollectionScheduleScreen>
             ),
           ),
 
-          const SizedBox(height: 12),
+          const SizedBox(height: 13),
 
-          Row(
-            children: [
-              const Icon(
-                Icons.access_time_rounded,
-                color: Colors.white,
-                size: 18,
-              ),
-              const SizedBox(width: 7),
-              Text(
+          _buildMainCardInfoRow(
+            icon: Icons.access_time_rounded,
+            text:
                 '${_formatTime(startDate.hour, startDate.minute)}'
                 ' - '
                 '${_formatTime(endDate.hour, endDate.minute)}',
-                style: const TextStyle(
+          ),
+
+          const SizedBox(height: 8),
+
+          _buildMainCardInfoRow(
+            icon: Icons.event_repeat_rounded,
+            text: schedule.scheduleDisplayName,
+          ),
+
+          const SizedBox(height: 16),
+
+          Divider(
+            color: Colors.white.withOpacity(0.25),
+            height: 1,
+          ),
+
+          const SizedBox(height: 14),
+
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.16),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: Icon(
+                  todayStatus.icon,
                   color: Colors.white,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
+                  size: 20,
+                ),
+              ),
+
+              const SizedBox(width: 10),
+
+              Expanded(
+                child: Column(
+                  crossAxisAlignment:
+                      CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Today\'s Status',
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+
+                    const SizedBox(height: 2),
+
+                    Text(
+                      todayStatus.title,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+
+                    const SizedBox(height: 3),
+
+                    Text(
+                      todayStatus.message,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
 
-          const SizedBox(height: 10),
+          const SizedBox(height: 15),
+
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 10,
+              vertical: 7,
+            ),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.14),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.route_outlined,
+                  color: Colors.white,
+                  size: 16,
+                ),
+
+                const SizedBox(width: 6),
+
+                Expanded(
+                  child: Text(
+                    '${area.zoneName} • ${area.zoneArea}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMainCardInfoRow({
+    required IconData icon,
+    required String text,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(
+          icon,
+          color: Colors.white,
+          size: 18,
+        ),
+
+        const SizedBox(width: 7),
+
+        Expanded(
+          child: Text(
+            text,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 14.5,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ============================================================
+  // ONE WEEKLY SCHEDULE CARD
+  // ============================================================
+
+  Widget _buildWeeklyScheduleSection(
+    CollectionSchedule schedule,
+  ) {
+    final days =
+        List<int>.from(schedule.daysOfWeek)..sort();
+
+    final now = DateTime.now();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Weekly Schedule',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.w800,
+            color: Colors.black87,
+          ),
+        ),
+
+        const SizedBox(height: 12),
+
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 4,
+          ),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: Colors.grey.shade200,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.035),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Column(
+            children: [
+              for (int index = 0;
+                  index < days.length;
+                  index++) ...[
+                _buildWeeklyDayRow(
+                  schedule: schedule,
+                  dayOfWeek: days[index],
+                  isToday: days[index] == now.weekday,
+                ),
+                if (index != days.length - 1)
+                  Divider(
+                    height: 1,
+                    color: Colors.grey.shade200,
+                  ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildWeeklyDayRow({
+    required CollectionSchedule schedule,
+    required int dayOfWeek,
+    required bool isToday,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        vertical: 13,
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: isToday
+                  ? Colors.green.shade100
+                  : Colors.green.shade50,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              Icons.calendar_today_outlined,
+              color: Colors.green.shade700,
+              size: 18,
+            ),
+          ),
+
+          const SizedBox(width: 12),
+
+          Expanded(
+            child: Column(
+              crossAxisAlignment:
+                  CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      _getDayName(dayOfWeek),
+                      style: const TextStyle(
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.black87,
+                      ),
+                    ),
+
+                    if (isToday) ...[
+                      const SizedBox(width: 7),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.green.shade50,
+                          borderRadius:
+                              BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          'Today',
+                          style: TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.green.shade700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+
+                const SizedBox(height: 3),
+
+                Text(
+                  '${_formatTime(schedule.startHour, schedule.startMinute)}'
+                  ' - '
+                  '${_formatTime(schedule.endHour, schedule.endMinute)}',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: Colors.grey.shade600,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ============================================================
+  // SIMPLE FOOTER - NO EXTRA CARD
+  // ============================================================
+
+  Widget _buildScheduleFooter(
+    CollectionArea area,
+    CollectionSchedule schedule,
+  ) {
+    final sourceDate =
+        _formatSourceDate(schedule.sourceUpdatedDate);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        2,
+        2,
+        2,
+        8,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Divider(
+            color: Colors.grey.shade300,
+          ),
+
+          const SizedBox(height: 8),
 
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(
-                Icons.delete_outline_rounded,
-                color: Colors.white,
-                size: 18,
+              Icon(
+                Icons.account_balance_outlined,
+                size: 16,
+                color: Colors.grey.shade500,
               ),
+
               const SizedBox(width: 7),
+
               Expanded(
                 child: Text(
-                  schedule.wasteType,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
+                  schedule.localAuthorityName,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade600,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -816,16 +1677,27 @@ class _CollectionScheduleScreenState extends State<CollectionScheduleScreen>
             ],
           ),
 
-          if (schedule.routeName.trim().isNotEmpty) ...[
-            const SizedBox(height: 10),
+          if (sourceDate.isNotEmpty) ...[
+            const SizedBox(height: 6),
             Row(
+              crossAxisAlignment:
+                  CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.route_outlined, color: Colors.white, size: 18),
+                Icon(
+                  Icons.verified_outlined,
+                  size: 16,
+                  color: Colors.grey.shade500,
+                ),
+
                 const SizedBox(width: 7),
+
                 Expanded(
                   child: Text(
-                    schedule.routeName,
-                    style: const TextStyle(color: Colors.white, fontSize: 14),
+                    'Official schedule source dated $sourceDate.',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      color: Colors.grey.shade600,
+                    ),
                   ),
                 ),
               ],
@@ -837,123 +1709,126 @@ class _CollectionScheduleScreenState extends State<CollectionScheduleScreen>
   }
 
   // ============================================================
-  // WEEKLY SCHEDULE
+  // EMPTY STATES
   // ============================================================
 
-  Widget _buildScheduleCard(CollectionSchedule schedule) {
-    final bool inProgress = _isCollectionInProgress(schedule);
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: inProgress ? Colors.green.shade300 : Colors.grey.shade200,
-          width: inProgress ? 1.5 : 1,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
+  Widget _buildChooseAreaState() {
+    return ListView(
+      padding: const EdgeInsets.only(
+        top: 55,
+        bottom: 120,
       ),
-      child: Row(
-        children: [
-          Container(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
-              color: Colors.green.shade50,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Icon(
-              Icons.calendar_today_outlined,
-              color: Colors.green.shade700,
+      children: [
+        Icon(
+          Icons.location_searching_rounded,
+          size: 55,
+          color: Colors.green.shade300,
+        ),
+
+        const SizedBox(height: 16),
+
+        const Text(
+          'Choose Your Collection Area',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 17,
+            fontWeight: FontWeight.w800,
+            color: Colors.black87,
+          ),
+        ),
+
+        const SizedBox(height: 7),
+
+        Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: 20,
+          ),
+          child: Text(
+            'Search your taman, housing area or landmark '
+            'to view its collection schedule.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 13,
+              height: 1.45,
+              color: Colors.grey.shade600,
             ),
           ),
+        ),
 
-          const SizedBox(width: 14),
+        const SizedBox(height: 18),
 
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        _getDayName(schedule.dayOfWeek),
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.black87,
-                        ),
-                      ),
-                    ),
-
-                    if (inProgress)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.green.shade50,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Text(
-                          'In Progress',
-                          style: TextStyle(
-                            color: Colors.green.shade700,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-
-                const SizedBox(height: 5),
-
-                Text(
-                  '${_formatTime(schedule.startHour, schedule.startMinute)}'
-                  ' - '
-                  '${_formatTime(schedule.endHour, schedule.endMinute)}',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey.shade700,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-
-                const SizedBox(height: 4),
-
-                Text(
-                  schedule.wasteType,
-                  style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
-                ),
-
-                if (schedule.routeName.trim().isNotEmpty) ...[
-                  const SizedBox(height: 3),
-                  Text(
-                    schedule.routeName,
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
-                  ),
-                ],
-              ],
+        Center(
+          child: FilledButton.icon(
+            onPressed: _openAreaPicker,
+            icon: const Icon(
+              Icons.search_rounded,
+            ),
+            label: const Text(
+              'Search Collection Area',
+            ),
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.green.shade600,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(
+                horizontal: 18,
+                vertical: 12,
+              ),
             ),
           ),
-        ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildNoAreasPage() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(30),
+        child: Column(
+          mainAxisAlignment:
+              MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.location_off_outlined,
+              size: 60,
+              color: Colors.grey.shade400,
+            ),
+            const SizedBox(height: 15),
+            const Text(
+              'No Collection Areas Available',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'No active Kampar collection areas are currently available.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey.shade600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNoSchedulePage(
+    CollectionArea area,
+  ) {
+    return Center(
+      child: Text(
+        'No active schedule found for ${area.areaName}.',
+        textAlign: TextAlign.center,
       ),
     );
   }
 
   // ============================================================
-  // PAGE
+  // BUILD
   // ============================================================
 
   @override
@@ -961,122 +1836,522 @@ class _CollectionScheduleScreenState extends State<CollectionScheduleScreen>
     super.build(context);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F9FC),
+      backgroundColor:
+          const Color(0xFFF7F9FC),
       body: SafeArea(
         child: _isLoadingAreas
-            ? const Center(child: CircularProgressIndicator())
-            : _areas.isEmpty
             ? const Center(
-                child: Text('No collection schedules are available.'),
+                child:
+                    CircularProgressIndicator(),
               )
-            : Padding(
-                padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Collection Schedule',
-                      style: TextStyle(
-                        fontSize: 26,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.black87,
-                      ),
+            : _areas.isEmpty
+                ? _buildNoAreasPage()
+                : Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      20,
+                      18,
+                      20,
+                      0,
                     ),
-
-                    const SizedBox(height: 6),
-
-                    Text(
-                      'Check scheduled waste collection around Perak.',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
-
-                    const SizedBox(height: 22),
-
-                    Text(
-                      'Viewing Area',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.grey.shade700,
-                      ),
-                    ),
-
-                    const SizedBox(height: 8),
-
-                    _buildAreaSelector(),
-
-                    const SizedBox(height: 10),
-
-                    _buildUseMyLocationButton(),
-
-                    _buildLocationMessage(),
-
-                    const SizedBox(height: 20),
-
-                    Expanded(
-                      child: StreamBuilder<List<CollectionSchedule>>(
-                        stream: _scheduleService.getSchedulesByArea(
-                          _selectedArea!,
+                    child: Column(
+                      crossAxisAlignment:
+                          CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Collection Schedule',
+                          style: TextStyle(
+                            fontSize: 26,
+                            fontWeight:
+                                FontWeight.w800,
+                            color: Colors.black87,
+                          ),
                         ),
-                        builder: (context, snapshot) {
-                          if (snapshot.connectionState ==
-                              ConnectionState.waiting) {
-                            return const Center(
-                              child: CircularProgressIndicator(),
-                            );
-                          }
 
-                          if (snapshot.hasError) {
-                            return Center(
-                              child: Text(
-                                'Failed to load schedule.\n'
-                                '${snapshot.error}',
-                                textAlign: TextAlign.center,
-                              ),
-                            );
-                          }
+                        const SizedBox(height: 6),
 
-                          final schedules = snapshot.data ?? [];
+                        Text(
+                          'Check official waste collection schedules '
+                          'for supported areas in Kampar, Perak.',
+                          style: TextStyle(
+                            fontSize: 14,
+                            height: 1.4,
+                            color:
+                                Colors.grey.shade600,
+                          ),
+                        ),
 
-                          if (schedules.isEmpty) {
-                            return Center(
-                              child: Text(
-                                'No schedule found for $_selectedArea.',
-                              ),
-                            );
-                          }
+                        const SizedBox(height: 22),
 
-                          return ListView(
-                            padding: const EdgeInsets.only(bottom: 100),
-                            children: [
-                              _buildNextCollectionCard(schedules),
+                        Text(
+                          'Collection Area',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight:
+                                FontWeight.w700,
+                            color:
+                                Colors.grey.shade700,
+                          ),
+                        ),
 
-                              const SizedBox(height: 28),
+                        const SizedBox(height: 8),
 
-                              const Text(
-                                'Weekly Schedule',
-                                style: TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.w800,
-                                  color: Colors.black87,
+                        _buildAreaSelector(),
+
+                        const SizedBox(height: 10),
+
+                        _buildUseMyLocationButton(),
+
+                        _buildLocationMessage(),
+
+                        const SizedBox(height: 15),
+
+                        Expanded(
+                          child: _selectedArea == null
+                              ? _buildChooseAreaState()
+                              : StreamBuilder<
+                                  CollectionSchedule?>(
+                                  stream: _scheduleService
+                                      .watchScheduleForArea(
+                                    _selectedArea!,
+                                  ),
+                                  builder: (
+                                    context,
+                                    snapshot,
+                                  ) {
+                                    if (snapshot
+                                            .connectionState ==
+                                        ConnectionState
+                                            .waiting) {
+                                      return const Center(
+                                        child:
+                                            CircularProgressIndicator(),
+                                      );
+                                    }
+
+                                    if (snapshot.hasError) {
+                                      return Center(
+                                        child: Text(
+                                          'Failed to load schedule.\n${snapshot.error}',
+                                          textAlign:
+                                              TextAlign.center,
+                                        ),
+                                      );
+                                    }
+
+                                    final schedule =
+                                        snapshot.data;
+
+                                    if (schedule == null) {
+                                      return _buildNoSchedulePage(
+                                        _selectedArea!,
+                                      );
+                                    }
+
+                                    return StreamBuilder<
+                                        CollectionEvent?>(
+                                      stream: _eventService
+                                          .watchTodayEvent(
+                                        _selectedArea!,
+                                      ),
+                                      builder: (
+                                        context,
+                                        eventSnapshot,
+                                      ) {
+                                        // If the event is still loading, the
+                                        // official schedule is shown first.
+                                        // Once Firestore returns an event,
+                                        // the status updates automatically.
+                                        final todayEvent =
+                                            eventSnapshot.data;
+
+                                        return ListView(
+                                          padding:
+                                              const EdgeInsets.only(
+                                            top: 2,
+                                            bottom: 135,
+                                          ),
+                                          children: [
+                                            _buildMainCollectionCard(
+                                              _selectedArea!,
+                                              schedule,
+                                              todayEvent,
+                                            ),
+
+                                            const SizedBox(
+                                              height: 26,
+                                            ),
+
+                                            _buildWeeklyScheduleSection(
+                                              schedule,
+                                            ),
+
+                                            const SizedBox(
+                                              height: 18,
+                                            ),
+
+                                            _buildScheduleFooter(
+                                              _selectedArea!,
+                                              schedule,
+                                            ),
+                                          ],
+                                        );
+                                      },
+                                    );
+                                  },
                                 ),
-                              ),
-
-                              const SizedBox(height: 14),
-
-                              ...schedules.map(_buildScheduleCard),
-                            ],
-                          );
-                        },
-                      ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-              ),
+                  ),
       ),
     );
   }
+}
+
+// ============================================================================
+// SEARCHABLE AREA PICKER
+// ============================================================================
+
+class _AreaPickerSheet extends StatefulWidget {
+  final List<CollectionArea> areas;
+  final String? currentAreaId;
+  final CollectionScheduleService scheduleService;
+
+  const _AreaPickerSheet({
+    required this.areas,
+    required this.currentAreaId,
+    required this.scheduleService,
+  });
+
+  @override
+  State<_AreaPickerSheet> createState() =>
+      _AreaPickerSheetState();
+}
+
+class _AreaPickerSheetState
+    extends State<_AreaPickerSheet> {
+  final TextEditingController _searchController =
+      TextEditingController();
+
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final results =
+        widget.scheduleService.filterAreas(
+      widget.areas,
+      _query,
+    );
+
+    final bottomInset =
+        MediaQuery.of(context).viewInsets.bottom;
+
+    return Container(
+      height:
+          MediaQuery.of(context).size.height * 0.82,
+      padding: EdgeInsets.fromLTRB(
+        18,
+        12,
+        18,
+        12 + bottomInset,
+      ),
+      decoration: const BoxDecoration(
+        color: Color(0xFFF7F9FC),
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(26),
+        ),
+      ),
+      child: Column(
+        children: [
+          Container(
+            width: 42,
+            height: 4,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade300,
+              borderRadius:
+                  BorderRadius.circular(10),
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Select Collection Area',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight:
+                        FontWeight.w800,
+                    color: Colors.black87,
+                  ),
+                ),
+              ),
+
+              IconButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                },
+                icon: const Icon(
+                  Icons.close_rounded,
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 10),
+
+          TextField(
+            controller: _searchController,
+            autofocus: true,
+            onChanged: (value) {
+              setState(() {
+                _query = value;
+              });
+            },
+            decoration: InputDecoration(
+              hintText:
+                  'Search taman, area or landmark...',
+              prefixIcon: const Icon(
+                Icons.search_rounded,
+              ),
+              suffixIcon: _query.isEmpty
+                  ? null
+                  : IconButton(
+                      onPressed: () {
+                        _searchController.clear();
+
+                        setState(() {
+                          _query = '';
+                        });
+                      },
+                      icon: const Icon(
+                        Icons.close_rounded,
+                      ),
+                    ),
+              filled: true,
+              fillColor: Colors.white,
+              border: OutlineInputBorder(
+                borderRadius:
+                    BorderRadius.circular(16),
+                borderSide: BorderSide.none,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius:
+                    BorderRadius.circular(16),
+                borderSide: BorderSide(
+                  color:
+                      Colors.grey.shade200,
+                ),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius:
+                    BorderRadius.circular(16),
+                borderSide: BorderSide(
+                  color:
+                      Colors.green.shade400,
+                  width: 1.5,
+                ),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 9),
+
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              _query.trim().isEmpty
+                  ? '${results.length} supported areas'
+                  : '${results.length} result${results.length == 1 ? '' : 's'}',
+              style: TextStyle(
+                fontSize: 12,
+                color:
+                    Colors.grey.shade600,
+                fontWeight:
+                    FontWeight.w600,
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 8),
+
+          Expanded(
+            child: results.isEmpty
+                ? Center(
+                    child: Text(
+                      'No matching collection area.',
+                      style: TextStyle(
+                        color:
+                            Colors.grey.shade600,
+                      ),
+                    ),
+                  )
+                : ListView.separated(
+                    padding:
+                        const EdgeInsets.only(
+                      bottom: 16,
+                    ),
+                    itemCount: results.length,
+                    separatorBuilder: (_, __) =>
+                        const SizedBox(
+                      height: 8,
+                    ),
+                    itemBuilder: (
+                      context,
+                      index,
+                    ) {
+                      final area =
+                          results[index];
+
+                      final selected =
+                          area.areaId ==
+                              widget.currentAreaId;
+
+                      return Material(
+                        color: Colors.white,
+                        borderRadius:
+                            BorderRadius.circular(16),
+                        child: InkWell(
+                          onTap: () {
+                            Navigator.pop(
+                              context,
+                              area,
+                            );
+                          },
+                          borderRadius:
+                              BorderRadius.circular(16),
+                          child: Container(
+                            padding:
+                                const EdgeInsets.all(
+                              14,
+                            ),
+                            decoration: BoxDecoration(
+                              borderRadius:
+                                  BorderRadius.circular(
+                                16,
+                              ),
+                              border: Border.all(
+                                color: selected
+                                    ? Colors
+                                        .green.shade300
+                                    : Colors
+                                        .grey.shade200,
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 42,
+                                  height: 42,
+                                  decoration:
+                                      BoxDecoration(
+                                    color: Colors
+                                        .green.shade50,
+                                    borderRadius:
+                                        BorderRadius
+                                            .circular(12),
+                                  ),
+                                  child: Icon(
+                                    Icons
+                                        .location_on_outlined,
+                                    color: Colors
+                                        .green.shade700,
+                                  ),
+                                ),
+
+                                const SizedBox(width: 12),
+
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment
+                                            .start,
+                                    children: [
+                                      Text(
+                                        area.areaName,
+                                        style:
+                                            const TextStyle(
+                                          fontSize: 14.5,
+                                          fontWeight:
+                                              FontWeight
+                                                  .w700,
+                                          color:
+                                              Colors.black87,
+                                        ),
+                                      ),
+                                      const SizedBox(
+                                        height: 3,
+                                      ),
+                                      Text(
+                                        '${area.zoneName} • ${area.zoneArea}',
+                                        maxLines: 1,
+                                        overflow:
+                                            TextOverflow
+                                                .ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 11.5,
+                                          color: Colors
+                                              .grey.shade600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+
+                                if (selected)
+                                  Icon(
+                                    Icons
+                                        .check_circle_rounded,
+                                    color: Colors
+                                        .green.shade600,
+                                    size: 21,
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// TODAY STATUS MODEL
+// ============================================================================
+
+enum _TodayCollectionStatusType {
+  upcoming,
+  active,
+  ended,
+  notScheduled,
+  inProgress,
+  collected,
+  missed,
+}
+
+class _TodayCollectionStatus {
+  final _TodayCollectionStatusType type;
+  final String title;
+  final String message;
+  final IconData icon;
+
+  const _TodayCollectionStatus({
+    required this.type,
+    required this.title,
+    required this.message,
+    required this.icon,
+  });
 }

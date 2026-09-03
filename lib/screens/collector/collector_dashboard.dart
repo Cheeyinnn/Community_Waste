@@ -1,14 +1,24 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../../models/waste_report.dart';
 import '../../services/firestore_service.dart';
+import '../../services/collection_schedule_service.dart';
+import '../../services/auth_service.dart';
+import '../auth/login_screen.dart';
+import '../auth/profile_page.dart';
 
 enum ProgressFilter { today, week, month, all }
 
 class CollectorDashboardScreen extends StatefulWidget {
   final Function(String filter) onNavigateToTasks;
+  final VoidCallback onNavigateToCollectionRuns;
 
-  const CollectorDashboardScreen({super.key, required this.onNavigateToTasks});
+  const CollectorDashboardScreen({
+    super.key,
+    required this.onNavigateToTasks,
+    required this.onNavigateToCollectionRuns,
+  });
 
   @override
   State<CollectorDashboardScreen> createState() =>
@@ -18,6 +28,9 @@ class CollectorDashboardScreen extends StatefulWidget {
 class _CollectorDashboardScreenState extends State<CollectorDashboardScreen> {
   ProgressFilter _selectedFilter = ProgressFilter.today;
   final ScrollController _scrollController = ScrollController();
+  final AuthService _authService = AuthService();
+  final CollectionScheduleService _scheduleService =
+      CollectionScheduleService();
 
   @override
   void dispose() {
@@ -36,6 +49,601 @@ class _CollectorDashboardScreenState extends State<CollectorDashboardScreen> {
       case ProgressFilter.all:
         return 'All';
     }
+  }
+
+  Future<bool?> _confirmLogout() {
+    return showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(22),
+          ),
+          title: const Text(
+            'Log Out?',
+            style: TextStyle(fontWeight: FontWeight.w800),
+          ),
+          content: const Text(
+            'Are you sure you want to log out of your collector account?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.red,
+              ),
+              child: const Text('Log Out'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _logout() async {
+    final confirmed = await _confirmLogout();
+
+    if (confirmed != true) {
+      return;
+    }
+
+    await _authService.logout();
+
+    if (!mounted) {
+      return;
+    }
+
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (_) => const LoginScreen(),
+      ),
+      (route) => false,
+    );
+  }
+
+  Future<void> _openAccountMenu(User currentUser) async {
+    final displayName = currentUser.displayName?.trim().isNotEmpty == true
+        ? currentUser.displayName!.trim()
+        : (currentUser.email?.split('@').first ?? 'Collector');
+
+    final email = currentUser.email?.trim() ?? '';
+    final photoUrl = currentUser.photoURL ?? '';
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return Container(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+          decoration: const BoxDecoration(
+            color: Color(0xFFF7F9FC),
+            borderRadius: BorderRadius.vertical(
+              top: Radius.circular(28),
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 42,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(
+                    color: Colors.grey.shade200,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 28,
+                      backgroundColor: Colors.orange.withOpacity(0.12),
+                      backgroundImage:
+                          photoUrl.isNotEmpty ? NetworkImage(photoUrl) : null,
+                      child: photoUrl.isEmpty
+                          ? Icon(
+                              Icons.person_rounded,
+                              color: Colors.orange.shade700,
+                              size: 30,
+                            )
+                          : null,
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            displayName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.black87,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            email,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 9,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.shade50,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              'Collector',
+                              style: TextStyle(
+                                color: Colors.orange.shade800,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              _buildAccountMenuTile(
+                icon: Icons.person_outline_rounded,
+                iconColor: Colors.orange,
+                title: 'My Profile',
+                subtitle: 'View and edit your account information',
+                onTap: () {
+                  Navigator.pop(sheetContext);
+
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const ProfilePage(),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 10),
+              _buildAccountMenuTile(
+                icon: Icons.logout_rounded,
+                iconColor: Colors.red,
+                title: 'Log Out',
+                subtitle: 'Sign out of your collector account',
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _logout();
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildAccountMenuTile({
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 14,
+          ),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: Colors.grey.shade200,
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: iconColor.withOpacity(0.10),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(
+                  icon,
+                  color: iconColor,
+                  size: 23,
+                ),
+              ),
+              const SizedBox(width: 13),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: Colors.grey.shade400,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ============================================================
+  // TODAY'S COLLECTION RUN SUMMARY
+  // ============================================================
+
+  Future<_CollectionRunSummary> _loadTodayCollectionRunSummary(
+    String collectorId,
+  ) async {
+    try {
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(collectorId)
+          .get();
+
+      final rawZones =
+          userDoc.data()?['assignedCollectionZoneIds'];
+
+      if (rawZones is! Iterable) {
+        return const _CollectionRunSummary(
+          active: 0,
+          completed: 0,
+        );
+      }
+
+      final assignedZoneIds = rawZones
+          .map((item) => item.toString().trim())
+          .where((item) => item.isNotEmpty)
+          .toSet();
+
+      if (assignedZoneIds.isEmpty) {
+        return const _CollectionRunSummary(
+          active: 0,
+          completed: 0,
+        );
+      }
+
+      final areas =
+          await _scheduleService.getAvailableAreas();
+
+      final scheduleIds = areas
+          .where(
+            (area) =>
+                assignedZoneIds.contains(area.zoneId),
+          )
+          .map((area) => area.scheduleId)
+          .where((id) => id.trim().isNotEmpty)
+          .toSet()
+          .toList();
+
+      final scheduleResults = await Future.wait(
+        scheduleIds.map(
+          (scheduleId) =>
+              _scheduleService.getScheduleById(
+            scheduleId,
+          ),
+        ),
+      );
+
+      final schedulesById = {
+        for (final schedule in scheduleResults)
+          if (schedule != null)
+            schedule.scheduleId: schedule,
+      };
+
+      final now = DateTime.now();
+      final todayWeekday = now.weekday;
+
+      final todayAreas = areas.where((area) {
+        if (!assignedZoneIds.contains(area.zoneId)) {
+          return false;
+        }
+
+        final schedule =
+            schedulesById[area.scheduleId];
+
+        if (schedule == null) {
+          return false;
+        }
+
+        return schedule.collectsOnDay(todayWeekday);
+      }).toList();
+
+      if (todayAreas.isEmpty) {
+        return const _CollectionRunSummary(
+          active: 0,
+          completed: 0,
+        );
+      }
+
+      final todayKey =
+          '${now.year.toString().padLeft(4, '0')}-'
+          '${now.month.toString().padLeft(2, '0')}-'
+          '${now.day.toString().padLeft(2, '0')}';
+
+      final eventSnapshot =
+          await FirebaseFirestore.instance
+              .collection('collection_events')
+              .where(
+                'collectionDate',
+                isEqualTo: todayKey,
+              )
+              .get();
+
+      final completedAreaIds = <String>{};
+
+      for (final doc in eventSnapshot.docs) {
+        final data = doc.data();
+
+        final eventCollectorId =
+            data['collectorId']?.toString().trim() ?? '';
+
+        final status =
+            data['status']?.toString().trim().toLowerCase() ?? '';
+
+        final areaId =
+            data['areaId']?.toString().trim() ?? '';
+
+        if (eventCollectorId == collectorId &&
+            status == 'collected' &&
+            areaId.isNotEmpty) {
+          completedAreaIds.add(areaId);
+        }
+      }
+
+      final completed = todayAreas.where((area) {
+        return completedAreaIds.contains(area.areaId);
+      }).length;
+
+      final active =
+          (todayAreas.length - completed).clamp(
+        0,
+        todayAreas.length,
+      );
+
+      return _CollectionRunSummary(
+        active: active,
+        completed: completed,
+      );
+    } catch (_) {
+      return const _CollectionRunSummary(
+        active: 0,
+        completed: 0,
+      );
+    }
+  }
+
+  Widget _buildTodayWorkSection({
+    required int assignedReportCount,
+    required int inProgressReportCount,
+    required int completionSubmittedCount,
+    required int resolvedReportCount,
+    required String collectorId,
+  }) {
+    final activeReportCount =
+        assignedReportCount + inProgressReportCount;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Today\'s Work',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
+            color: Colors.black87,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Check both Report Tasks and Collection Runs each day.',
+          style: TextStyle(
+            fontSize: 12.5,
+            color: Colors.grey.shade600,
+            height: 1.35,
+          ),
+        ),
+        const SizedBox(height: 14),
+        Row(
+          children: [
+            Expanded(
+              child: _buildDailyWorkCard(
+                title: 'Report Tasks',
+                icon: Icons.assignment_outlined,
+                color: Colors.deepPurple,
+                mainValue: '$activeReportCount active',
+                detail:
+                    '$completionSubmittedCount waiting review • '
+                    '$resolvedReportCount resolved',
+                onTap: () =>
+                    widget.onNavigateToTasks('All'),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: FutureBuilder<_CollectionRunSummary>(
+                future: _loadTodayCollectionRunSummary(
+                  collectorId,
+                ),
+                builder: (context, snapshot) {
+                  final summary = snapshot.data;
+
+                  final mainValue = summary == null
+                      ? 'Loading...'
+                      : '${summary.active} active';
+
+                  final detail = summary == null
+                      ? 'Checking today\'s runs'
+                      : '${summary.completed} completed today';
+
+                  return _buildDailyWorkCard(
+                    title: 'Collection Runs',
+                    icon: Icons.local_shipping_outlined,
+                    color: Colors.orange,
+                    mainValue: mainValue,
+                    detail: detail,
+                    onTap:
+                        widget.onNavigateToCollectionRuns,
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDailyWorkCard({
+    required String title,
+    required IconData icon,
+    required Color color,
+    required String mainValue,
+    required String detail,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          constraints: const BoxConstraints(
+            minHeight: 150,
+          ),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: color.withOpacity(0.15),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.025),
+                blurRadius: 12,
+                offset: const Offset(0, 5),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment:
+                CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: color.withOpacity(0.10),
+                      borderRadius:
+                          BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      icon,
+                      color: color,
+                      size: 21,
+                    ),
+                  ),
+                  const Spacer(),
+                  Icon(
+                    Icons.arrow_forward_ios_rounded,
+                    size: 14,
+                    color: Colors.grey.shade400,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 13),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.black87,
+                ),
+              ),
+              const SizedBox(height: 5),
+              Text(
+                mainValue,
+                style: TextStyle(
+                  fontSize: 19,
+                  fontWeight: FontWeight.w900,
+                  color: color,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                detail,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  height: 1.3,
+                  color: Colors.grey.shade600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   List<WasteReport> _getFilteredReports(List<WasteReport> reports) {
@@ -123,18 +731,28 @@ class _CollectorDashboardScreenState extends State<CollectorDashboardScreen> {
             final inProgressCount = reports
                 .where((r) => r.status == 'In Progress')
                 .length;
+            final completionSubmittedCount = reports
+                .where((r) => r.status == 'Completion Submitted')
+                .length;
             final resolvedCount = reports
                 .where((r) => r.status == 'Resolved')
                 .length;
-
-            final pendingTasks = totalTasks - resolvedCount;
 
             final filteredReports = _getFilteredReports(reports);
             final filteredTotal = filteredReports.length;
             final filteredResolved = filteredReports
                 .where((r) => r.status == 'Resolved')
                 .length;
-            final filteredPending = filteredTotal - filteredResolved;
+            final filteredWaitingReview = filteredReports
+                .where((r) => r.status == 'Completion Submitted')
+                .length;
+            final filteredActive = filteredReports
+                .where(
+                  (r) =>
+                      r.status == 'Assigned' ||
+                      r.status == 'In Progress',
+                )
+                .length;
 
             final completionRate = filteredTotal == 0
                 ? 0.0
@@ -159,11 +777,43 @@ class _CollectorDashboardScreenState extends State<CollectorDashboardScreen> {
                           color: Colors.black87,
                         ),
                       ),
-                      CircleAvatar(
-                        backgroundColor: Colors.orange.shade100,
-                        child: Icon(
-                          Icons.person,
-                          color: Colors.orange.shade700,
+                      Container(
+                        width: 46,
+                        height: 46,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(15),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.06),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: IconButton(
+                          onPressed: () => _openAccountMenu(currentUser),
+                          tooltip: 'Account',
+                          icon: currentUser.photoURL?.isNotEmpty == true
+                              ? ClipOval(
+                                  child: Image.network(
+                                    currentUser.photoURL!,
+                                    width: 28,
+                                    height: 28,
+                                    fit: BoxFit.cover,
+                                    errorBuilder:
+                                        (context, error, stackTrace) {
+                                      return Icon(
+                                        Icons.person_outline_rounded,
+                                        color: Colors.orange.shade700,
+                                      );
+                                    },
+                                  ),
+                                )
+                              : Icon(
+                                  Icons.person_outline_rounded,
+                                  color: Colors.orange.shade700,
+                                ),
                         ),
                       ),
                     ],
@@ -204,9 +854,8 @@ class _CollectorDashboardScreenState extends State<CollectorDashboardScreen> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          pendingTasks == 0
-                              ? 'You have no active task right now. Great work keeping the community clean!'
-                              : 'You have $pendingTasks active task(s) to complete. Let’s keep the community clean!',
+                          'Check your Report Tasks and Collection Runs '
+                          'for today\'s assigned work.',
                           style: TextStyle(
                             color: Colors.white.withOpacity(0.9),
                             fontSize: 14,
@@ -215,6 +864,16 @@ class _CollectorDashboardScreenState extends State<CollectorDashboardScreen> {
                         ),
                       ],
                     ),
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  _buildTodayWorkSection(
+                    assignedReportCount: assignedCount,
+                    inProgressReportCount: inProgressCount,
+                    completionSubmittedCount: completionSubmittedCount,
+                    resolvedReportCount: resolvedCount,
+                    collectorId: currentUser.uid,
                   ),
 
                   const SizedBox(height: 24),
@@ -248,6 +907,14 @@ class _CollectorDashboardScreenState extends State<CollectorDashboardScreen> {
                         icon: Icons.autorenew_rounded,
                         color: Colors.blue,
                         onTap: () => widget.onNavigateToTasks('In Progress'),
+                      ),
+                      _buildModernStatCard(
+                        title: 'Waiting Review',
+                        value: completionSubmittedCount.toString(),
+                        icon: Icons.fact_check_outlined,
+                        color: Colors.amber.shade800,
+                        onTap: () =>
+                            widget.onNavigateToTasks('Completion Submitted'),
                       ),
                       _buildModernStatCard(
                         title: 'Resolved',
@@ -363,10 +1030,18 @@ class _CollectorDashboardScreenState extends State<CollectorDashboardScreen> {
                           color: Colors.green,
                         ),
                         _buildQuickInfoTile(
-                          icon: Icons.hourglass_top_rounded,
-                          title: '${_filterLabel(_selectedFilter)} Pending',
-                          value: '$filteredPending tasks remaining',
-                          color: Colors.orange,
+                          icon: Icons.autorenew_rounded,
+                          title: '${_filterLabel(_selectedFilter)} Active',
+                          value: '$filteredActive active report tasks',
+                          color: Colors.blue,
+                        ),
+                        _buildQuickInfoTile(
+                          icon: Icons.fact_check_outlined,
+                          title:
+                              '${_filterLabel(_selectedFilter)} Waiting Review',
+                          value:
+                              '$filteredWaitingReview waiting for Admin review',
+                          color: Colors.amber.shade800,
                         ),
                       ],
                     ),
@@ -484,4 +1159,14 @@ class _CollectorDashboardScreenState extends State<CollectorDashboardScreen> {
       ),
     );
   }
+}
+
+class _CollectionRunSummary {
+  final int active;
+  final int completed;
+
+  const _CollectionRunSummary({
+    required this.active,
+    required this.completed,
+  });
 }

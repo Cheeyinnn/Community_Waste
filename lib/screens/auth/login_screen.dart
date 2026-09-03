@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:community_waste_app/screens/collector/collector_main_screen.dart';
 
@@ -5,6 +6,7 @@ import '../../services/auth_service.dart';
 import '../admin/admin_main_screen.dart';
 import '../user/user_main.dart';
 import 'register_screen.dart';
+import 'verify_email_screen.dart';
 
 enum LoginRole { user, admin, collector }
 
@@ -28,7 +30,9 @@ class _LoginScreenState extends State<LoginScreen> {
     if (_emailController.text.trim().isEmpty ||
         _passwordController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter email and password')),
+        const SnackBar(
+          content: Text('Please enter email and password'),
+        ),
       );
       return;
     }
@@ -47,8 +51,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (user == null) {
         if (!mounted) return;
+
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Login failed: user not found')),
+          const SnackBar(
+            content: Text('Login failed: user not found'),
+          ),
         );
         return;
       }
@@ -57,50 +64,217 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (!mounted) return;
 
-      if (_selectedRole == LoginRole.admin && role != 'admin') {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('This account is not an admin account')),
-        );
-        return;
+      // ==========================================================
+      // EMAIL VERIFICATION
+      // ==========================================================
+
+      final verificationRequired =
+          await _authService.isEmailVerificationRequired(user.uid);
+
+      if (!mounted) return;
+
+      if (verificationRequired) {
+        await user.reload();
+
+        final refreshedUser = _authService.currentUser;
+
+        if (!mounted) return;
+
+        if (refreshedUser != null &&
+            !refreshedUser.emailVerified) {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => VerifyEmailScreen(
+                email: refreshedUser.email ??
+                    _emailController.text.trim(),
+              ),
+            ),
+          );
+
+          return;
+        }
+
+        await _authService.refreshEmailVerificationStatus();
       }
 
-      if (_selectedRole == LoginRole.collector && role != 'collector') {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('This account is not a collector account'),
-          ),
-        );
-        return;
-      }
+      if (!mounted) return;
 
-      if (_selectedRole == LoginRole.user && role != 'user') {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('This account is not a user account')),
-        );
-        return;
-      }
+      // ==========================================================
+      // READ CURRENT USER ROLE / COLLECTOR APPROVAL STATE
+      //
+      // We read this BEFORE routing anywhere so an approved user
+      // cannot accidentally skip the approval message.
+      // ==========================================================
 
-      if (role == 'admin') {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const AdminMainScreen()),
-        );
-      } else if (role == 'collector') {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const CollectorMainScreen()),
-        );
+      final userRef = FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid);
+
+      final userDoc = await userRef.get();
+      final userData = userDoc.data() ?? <String, dynamic>{};
+
+      if (!mounted) return;
+
+      final selectedRole = _selectedRoleValue;
+
+      final applicationStatus =
+          userData['collectorApplicationStatus']
+                  ?.toString()
+                  .trim()
+                  .toLowerCase() ??
+              '';
+
+      final rawZones =
+          userData['assignedCollectionZoneIds'];
+
+      final assignedZones = rawZones is Iterable
+          ? rawZones
+              .map((item) => item.toString().trim())
+              .where((item) => item.isNotEmpty)
+              .toList()
+          : <String>[];
+
+      final approvedAt =
+          userData['collectorApprovedAt'] is Timestamp
+              ? userData['collectorApprovedAt'] as Timestamp
+              : null;
+
+      final acknowledgedAt =
+          userData['collectorApprovalAcknowledgedAt'] is Timestamp
+              ? userData['collectorApprovalAcknowledgedAt']
+                  as Timestamp
+              : null;
+
+      final acknowledgedFlag =
+          userData['collectorApprovalAcknowledged'] == true;
+
+      // A collector approval is considered acknowledged only when
+      // the acknowledgement belongs to the CURRENT approval.
+      //
+      // This also fixes repeated testing with the same account:
+      // if an old acknowledgement exists but admin approved again
+      // later, the new approval message will appear again.
+      final bool currentApprovalAcknowledged;
+
+      if (!acknowledgedFlag) {
+        currentApprovalAcknowledged = false;
+      } else if (approvedAt == null) {
+        currentApprovalAcknowledged = true;
+      } else if (acknowledgedAt == null) {
+        currentApprovalAcknowledged = false;
       } else {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const UserMain()),
+        currentApprovalAcknowledged =
+            !acknowledgedAt.toDate().isBefore(
+                  approvedAt.toDate(),
+                );
+      }
+
+      final bool isApprovedCollector =
+          role == 'collector' &&
+          applicationStatus == 'approved';
+
+      // ==========================================================
+      // ONE-TIME APPROVAL NOTICE
+      //
+      // Show this before ANY normal navigation.
+      // It appears whether the person selected User or Collector,
+      // so they cannot miss the fact that their role changed.
+      // ==========================================================
+
+      if (isApprovedCollector &&
+          !currentApprovalAcknowledged) {
+        final continueAsCollector =
+            await _showCollectorApprovalDialog(
+          assignedZones: assignedZones,
         );
+
+        if (!mounted) return;
+
+        if (continueAsCollector == true) {
+          await userRef.set(
+            {
+              'collectorApprovalAcknowledged': true,
+              'collectorApprovalAcknowledgedAt':
+                  FieldValue.serverTimestamp(),
+            },
+            SetOptions(merge: true),
+          );
+
+          if (!mounted) return;
+
+          _navigateToRole('collector');
+          return;
+        }
+
+        await _authService.logout();
+        return;
+      }
+
+      // ==========================================================
+      // AFTER APPROVAL HAS ALREADY BEEN ACKNOWLEDGED
+      //
+      // A collector is no longer allowed to use User Login.
+      // Do NOT automatically jump them into Collector anymore.
+      // ==========================================================
+
+      if (isApprovedCollector &&
+          currentApprovalAcknowledged &&
+          selectedRole == 'user') {
+        final switchToCollector =
+            await _showCollectorMustUseCollectorLoginDialog();
+
+        await _authService.logout();
+
+        if (!mounted) return;
+
+        if (switchToCollector == true) {
+          setState(() {
+            _selectedRole = LoginRole.collector;
+          });
+        }
+
+        return;
+      }
+
+      // ==========================================================
+      // CORRECT LOGIN TAB
+      // ==========================================================
+
+      if (selectedRole == role) {
+        _navigateToRole(role);
+        return;
+      }
+
+      // ==========================================================
+      // OTHER WRONG LOGIN TABS
+      // ==========================================================
+
+      final switchToCorrectRole =
+          await _showWrongRoleDialog(
+        selectedRole: selectedRole,
+        actualRole: role,
+        applicationStatus: applicationStatus,
+      );
+
+      await _authService.logout();
+
+      if (!mounted) return;
+
+      if (switchToCorrectRole == true) {
+        setState(() {
+          _selectedRole =
+              _loginRoleFromString(role);
+        });
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Login failed: $e')));
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Login failed: $e'),
+        ),
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -110,7 +284,463 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  InputDecoration _inputDecoration({required String hint, Widget? suffixIcon}) {
+  // ============================================================
+  // SELECTED LOGIN ROLE
+  // ============================================================
+
+  String get _selectedRoleValue {
+    switch (_selectedRole) {
+      case LoginRole.user:
+        return 'user';
+      case LoginRole.admin:
+        return 'admin';
+      case LoginRole.collector:
+        return 'collector';
+    }
+  }
+
+  LoginRole _loginRoleFromString(String role) {
+    switch (role.trim().toLowerCase()) {
+      case 'admin':
+        return LoginRole.admin;
+      case 'collector':
+        return LoginRole.collector;
+      case 'user':
+      default:
+        return LoginRole.user;
+    }
+  }
+
+  // ============================================================
+  // FIRST APPROVAL MESSAGE
+  // ============================================================
+
+  Future<bool?> _showCollectorApprovalDialog({
+    required List<String> assignedZones,
+  }) {
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          titlePadding: const EdgeInsets.fromLTRB(
+            24,
+            24,
+            24,
+            0,
+          ),
+          contentPadding: const EdgeInsets.fromLTRB(
+            24,
+            18,
+            24,
+            8,
+          ),
+          actionsPadding: const EdgeInsets.fromLTRB(
+            16,
+            8,
+            16,
+            16,
+          ),
+          title: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color:
+                      const Color(0xFF35C76F).withOpacity(0.12),
+                  borderRadius:
+                      BorderRadius.circular(15),
+                ),
+                child: const Icon(
+                  Icons.verified_rounded,
+                  color: Color(0xFF35C76F),
+                  size: 28,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  'Collector Application Approved',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment:
+                  CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Your collector application has been approved. '
+                  'Your account is now registered as a Collector.',
+                  style: TextStyle(
+                    fontSize: 14,
+                    height: 1.45,
+                    color: Colors.grey.shade700,
+                  ),
+                ),
+
+                if (assignedZones.isNotEmpty) ...[
+                  const SizedBox(height: 18),
+                  Container(
+                    width: double.infinity,
+                    padding:
+                        const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color:
+                          Colors.green.shade50,
+                      borderRadius:
+                          BorderRadius.circular(16),
+                      border: Border.all(
+                        color:
+                            Colors.green.shade100,
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment:
+                          CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          assignedZones.length == 1
+                              ? 'Assigned Collection Zone'
+                              : 'Assigned Collection Zones',
+                          style: TextStyle(
+                            color:
+                                Colors.green.shade800,
+                            fontSize: 12,
+                            fontWeight:
+                                FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 7),
+                        ...assignedZones.map(
+                          (zoneId) => Padding(
+                            padding:
+                                const EdgeInsets.only(
+                              bottom: 4,
+                            ),
+                            child: Text(
+                              _zoneDisplayName(
+                                zoneId,
+                              ),
+                              style:
+                                  const TextStyle(
+                                fontSize: 13.5,
+                                fontWeight:
+                                    FontWeight.w700,
+                                color:
+                                    Colors.black87,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+
+                const SizedBox(height: 16),
+
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(13),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade50,
+                    borderRadius:
+                        BorderRadius.circular(14),
+                  ),
+                  child: Text(
+                    'After you continue, please use Collector Login '
+                    'for future sign-ins.',
+                    style: TextStyle(
+                      color: Colors.orange.shade900,
+                      fontSize: 12.5,
+                      height: 1.4,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(
+                  dialogContext,
+                  false,
+                );
+              },
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(
+                  dialogContext,
+                  true,
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor:
+                    const Color(0xFF35C76F),
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius:
+                      BorderRadius.circular(12),
+                ),
+              ),
+              child: const Text(
+                'Continue as Collector',
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // ============================================================
+  // COLLECTOR CAN NO LONGER USE USER LOGIN
+  // ============================================================
+
+  Future<bool?> _showCollectorMustUseCollectorLoginDialog() {
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          title: const Row(
+            children: [
+              Icon(
+                Icons.local_shipping_rounded,
+                color: Color(0xFFFFB547),
+              ),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Collector Account',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          content: const Text(
+            'Your account has already been upgraded to Collector. '
+            'User Login is no longer available for this account.\n\n'
+            'Please use Collector Login with the same email and password.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(
+                  dialogContext,
+                  false,
+                );
+              },
+              child: const Text('Back'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(
+                  dialogContext,
+                  true,
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor:
+                    const Color(0xFFFFB547),
+                foregroundColor: Colors.white,
+                elevation: 0,
+              ),
+              child: const Text(
+                'Switch to Collector Login',
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // ============================================================
+  // OTHER WRONG ROLE MESSAGE
+  // ============================================================
+
+  Future<bool?> _showWrongRoleDialog({
+    required String selectedRole,
+    required String actualRole,
+    required String applicationStatus,
+  }) {
+    String title = 'Wrong Login Type';
+    String message =
+        'You selected ${_roleDisplayName(selectedRole)} Login, '
+        'but this account is registered as '
+        '${_roleDisplayName(actualRole)}.';
+
+    if (selectedRole == 'collector' &&
+        actualRole == 'user' &&
+        applicationStatus == 'pending') {
+      title = 'Application Still Pending';
+      message =
+          'Your collector application is still waiting for '
+          'administrator review. Please continue using User Login '
+          'until your application is approved.';
+    } else if (selectedRole == 'collector' &&
+        actualRole == 'user' &&
+        applicationStatus == 'rejected') {
+      title = 'Collector Application Not Approved';
+      message =
+          'Your collector application was not approved. '
+          'Your account is still registered as a User.';
+    }
+
+    final color = _colorForRole(actualRole);
+
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(22),
+          ),
+          title: Text(
+            title,
+            style: const TextStyle(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          content: Text(
+            message,
+            style: const TextStyle(
+              height: 1.4,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(
+                  dialogContext,
+                  false,
+                );
+              },
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(
+                  dialogContext,
+                  true,
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: color,
+                foregroundColor: Colors.white,
+                elevation: 0,
+              ),
+              child: Text(
+                'Switch to ${_roleDisplayName(actualRole)} Login',
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // ============================================================
+  // ROLE HELPERS
+  // ============================================================
+
+  String _roleDisplayName(String role) {
+    switch (role.trim().toLowerCase()) {
+      case 'admin':
+        return 'Admin';
+      case 'collector':
+        return 'Collector';
+      case 'user':
+      default:
+        return 'User';
+    }
+  }
+
+  Color _colorForRole(String role) {
+    switch (role.trim().toLowerCase()) {
+      case 'admin':
+        return const Color(0xFF3FA9F5);
+      case 'collector':
+        return const Color(0xFFFFB547);
+      case 'user':
+      default:
+        return const Color(0xFF35C76F);
+    }
+  }
+
+  String _zoneDisplayName(String zoneId) {
+    switch (zoneId) {
+      case 'kampar_zone_1':
+        return 'Zone 1 • Kampar - Tronoh Mines';
+      case 'kampar_zone_2':
+        return 'Zone 2 • Kampar - Bandar Baru';
+      case 'kampar_zone_3':
+        return 'Zone 3 • Kampar Barat - Jeram';
+      case 'kampar_zone_4':
+        return 'Zone 4 • Gopeng';
+      default:
+        return zoneId;
+    }
+  }
+
+  // ============================================================
+  // NAVIGATE BY ACTUAL FIRESTORE ROLE
+  // ============================================================
+
+  void _navigateToRole(String role) {
+    Widget destination;
+
+    switch (role.trim().toLowerCase()) {
+      case 'admin':
+        destination = const AdminMainScreen();
+        break;
+
+      case 'collector':
+        destination = const CollectorMainScreen();
+        break;
+
+      case 'user':
+      default:
+        destination = const UserMain();
+        break;
+    }
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => destination,
+      ),
+    );
+  }
+
+  InputDecoration _inputDecoration({
+    required String hint,
+    Widget? suffixIcon,
+  }) {
     return InputDecoration(
       hintText: hint,
       filled: true,
@@ -165,14 +795,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  String get _buttonText {
-    switch (_selectedRole) {
-      case LoginRole.user:
-      case LoginRole.admin:
-      case LoginRole.collector:
-        return 'Log In';
-    }
-  }
+  String get _buttonText => 'Log In';
 
   Widget _buildRoleButton(String label, LoginRole role) {
     final bool isSelected = _selectedRole == role;
@@ -349,22 +972,27 @@ class _LoginScreenState extends State<LoginScreen> {
                               const SizedBox(width: 10),
                               _buildRoleButton('Admin', LoginRole.admin),
                               const SizedBox(width: 10),
-                              _buildRoleButton(
-                                'Collector',
-                                LoginRole.collector,
-                              ),
+                              _buildRoleButton('Collector', LoginRole.collector),
                             ],
                           ),
                           const SizedBox(height: 22),
                           TextField(
                             controller: _emailController,
                             keyboardType: TextInputType.emailAddress,
+                            textInputAction: TextInputAction.next,
+                            autocorrect: false,
                             decoration: _inputDecoration(hint: 'Email'),
                           ),
                           const SizedBox(height: 14),
                           TextField(
                             controller: _passwordController,
                             obscureText: _obscurePassword,
+                            textInputAction: TextInputAction.done,
+                            onSubmitted: (_) {
+                              if (!_isLoading) {
+                                _login();
+                              }
+                            },
                             decoration: _inputDecoration(
                               hint: 'Password',
                               suffixIcon: IconButton(

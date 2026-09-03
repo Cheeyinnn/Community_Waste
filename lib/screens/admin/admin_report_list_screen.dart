@@ -31,6 +31,7 @@ class _AdminReportListScreenState extends State<AdminReportListScreen> {
     'Pending',
     'Assigned',
     'In Progress',
+    'Completion Submitted',
     'Resolved',
     'Rejected',
   ];
@@ -65,6 +66,8 @@ class _AdminReportListScreenState extends State<AdminReportListScreen> {
         return Colors.deepPurple;
       case 'In Progress':
         return Colors.blue;
+      case 'Completion Submitted':
+        return Colors.amber.shade800;
       case 'Resolved':
         return Colors.green;
       case 'Rejected':

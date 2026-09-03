@@ -6,6 +6,9 @@ import '../../models/waste_report.dart';
 import '../../services/auth_service.dart';
 import '../../services/firestore_service.dart';
 import 'notification_page.dart';
+import 'collector_application_screen.dart';
+import '../auth/profile_page.dart';
+import '../auth/login_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final Function(String? statusFilter) onNavigateToReports;
@@ -111,9 +114,9 @@ class _HomeScreenState extends State<HomeScreen>
                 children: [
                   _buildTopBar(
                     userId: userId,
-                    onLogout: () async {
-                      await authService.logout();
-                    },
+                    userName: userName,
+                    userEmail: user?.email ?? '',
+                    photoUrl: photoUrl,
                   ),
                   const SizedBox(height: 24),
                   _buildHeroCard(
@@ -266,7 +269,9 @@ class _HomeScreenState extends State<HomeScreen>
 
   Widget _buildTopBar({
     required String userId,
-    required VoidCallback onLogout,
+    required String userName,
+    required String userEmail,
+    required String photoUrl,
   }) {
     return Row(
       children: [
@@ -339,7 +344,9 @@ class _HomeScreenState extends State<HomeScreen>
                       ),
                       child: IconButton(
                         onPressed: _openNotificationPage,
-                        icon: const Icon(Icons.notifications_none_rounded),
+                        icon: const Icon(
+                          Icons.notifications_none_rounded,
+                        ),
                         color: Colors.black87,
                         tooltip: 'Notifications',
                       ),
@@ -360,10 +367,15 @@ class _HomeScreenState extends State<HomeScreen>
                           decoration: BoxDecoration(
                             color: Colors.red,
                             borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: Colors.white, width: 2),
+                            border: Border.all(
+                              color: Colors.white,
+                              width: 2,
+                            ),
                           ),
                           child: Text(
-                            unreadCount > 99 ? '99+' : unreadCount.toString(),
+                            unreadCount > 99
+                                ? '99+'
+                                : unreadCount.toString(),
                             textAlign: TextAlign.center,
                             style: const TextStyle(
                               color: Colors.white,
@@ -395,13 +407,306 @@ class _HomeScreenState extends State<HomeScreen>
             ],
           ),
           child: IconButton(
-            onPressed: onLogout,
-            icon: const Icon(Icons.logout_rounded),
+            onPressed: () {
+              _openAccountMenu(
+                userName: userName,
+                userEmail: userEmail,
+                photoUrl: photoUrl,
+              );
+            },
+            icon: photoUrl.isNotEmpty
+                ? ClipOval(
+                    child: Image.network(
+                      photoUrl,
+                      width: 30,
+                      height: 30,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) {
+                        return const Icon(
+                          Icons.person_outline_rounded,
+                        );
+                      },
+                    ),
+                  )
+                : const Icon(
+                    Icons.person_outline_rounded,
+                  ),
             color: Colors.black87,
-            tooltip: 'Logout',
+            tooltip: 'Account',
           ),
         ),
       ],
+    );
+  }
+
+  Future<void> _openAccountMenu({
+    required String userName,
+    required String userEmail,
+    required String photoUrl,
+  }) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return Container(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+          decoration: const BoxDecoration(
+            color: Color(0xFFF7F9FC),
+            borderRadius: BorderRadius.vertical(
+              top: Radius.circular(28),
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 42,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(color: Colors.grey.shade200),
+                ),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 28,
+                      backgroundColor:
+                          const Color(0xFF35C76F).withOpacity(0.12),
+                      backgroundImage:
+                          photoUrl.isNotEmpty ? NetworkImage(photoUrl) : null,
+                      child: photoUrl.isEmpty
+                          ? const Icon(
+                              Icons.person_rounded,
+                              color: Color(0xFF35C76F),
+                              size: 30,
+                            )
+                          : null,
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            userName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.black87,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            userEmail,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 9,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.green.shade50,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              'Normal User',
+                              style: TextStyle(
+                                color: Colors.green.shade700,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              _buildAccountMenuTile(
+                icon: Icons.person_outline_rounded,
+                iconColor: Colors.blue,
+                title: 'My Profile',
+                subtitle: 'View and edit your account information',
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const ProfilePage(),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 10),
+              _buildAccountMenuTile(
+                icon: Icons.local_shipping_outlined,
+                iconColor: Colors.orange,
+                title: 'Become a Collector',
+                subtitle: 'Apply to join the waste collection team',
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          const CollectorApplicationScreen(),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 10),
+              _buildAccountMenuTile(
+                icon: Icons.logout_rounded,
+                iconColor: Colors.red,
+                title: 'Log Out',
+                subtitle: 'Sign out of your account',
+                onTap: () async {
+                  Navigator.pop(sheetContext);
+
+                  final confirmed = await _confirmLogout();
+
+                  if (confirmed != true) {
+                    return;
+                  }
+
+                  await authService.logout();
+
+                  if (!mounted) {
+                    return;
+                  }
+
+                  Navigator.of(context).pushAndRemoveUntil(
+                    MaterialPageRoute(
+                      builder: (_) => const LoginScreen(),
+                    ),
+                    (route) => false,
+                  );
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildAccountMenuTile({
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: Colors.grey.shade200),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: iconColor.withOpacity(0.10),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(icon, color: iconColor, size: 23),
+              ),
+              const SizedBox(width: 13),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: Colors.grey.shade400,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<bool?> _confirmLogout() {
+    return showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Log Out?'),
+          content: const Text(
+            'Are you sure you want to log out of your account?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(dialogContext, false);
+              },
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(dialogContext, true);
+              },
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.red,
+              ),
+              child: const Text('Log Out'),
+            ),
+          ],
+        );
+      },
     );
   }
 

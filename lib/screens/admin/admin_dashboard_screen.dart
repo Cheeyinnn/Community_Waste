@@ -1,8 +1,12 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 
 import '../../models/waste_report.dart';
 import '../../services/firestore_service.dart';
+import '../../services/auth_service.dart';
+import '../auth/login_screen.dart';
+import '../auth/profile_page.dart';
 import 'admin_report_detail_screen.dart';
 
 class AdminDashboardScreen extends StatelessWidget {
@@ -17,6 +21,285 @@ class AdminDashboardScreen extends StatelessWidget {
     required this.onNavigateToMap,
   });
 
+  Future<bool?> _confirmLogout(BuildContext context) {
+    return showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(22),
+          ),
+          title: const Text(
+            'Log Out?',
+            style: TextStyle(fontWeight: FontWeight.w800),
+          ),
+          content: const Text(
+            'Are you sure you want to log out of your admin account?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.red,
+              ),
+              child: const Text('Log Out'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _logout(BuildContext context) async {
+    final confirmed = await _confirmLogout(context);
+
+    if (confirmed != true) {
+      return;
+    }
+
+    await AuthService().logout();
+
+    if (!context.mounted) {
+      return;
+    }
+
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (_) => const LoginScreen(),
+      ),
+      (route) => false,
+    );
+  }
+
+  Future<void> _openAccountMenu(BuildContext context) async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+
+    if (currentUser == null) {
+      return;
+    }
+
+    final displayName = currentUser.displayName?.trim().isNotEmpty == true
+        ? currentUser.displayName!.trim()
+        : (currentUser.email?.split('@').first ?? 'Administrator');
+
+    final email = currentUser.email?.trim() ?? '';
+    final photoUrl = currentUser.photoURL ?? '';
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return Container(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+          decoration: const BoxDecoration(
+            color: Color(0xFFF7F9FC),
+            borderRadius: BorderRadius.vertical(
+              top: Radius.circular(28),
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 42,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(
+                    color: Colors.grey.shade200,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 28,
+                      backgroundColor: Colors.blue.withOpacity(0.12),
+                      backgroundImage:
+                          photoUrl.isNotEmpty ? NetworkImage(photoUrl) : null,
+                      child: photoUrl.isEmpty
+                          ? const Icon(
+                              Icons.admin_panel_settings_rounded,
+                              color: Colors.blue,
+                              size: 30,
+                            )
+                          : null,
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            displayName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.black87,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            email,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 9,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.shade50,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: const Text(
+                              'Administrator',
+                              style: TextStyle(
+                                color: Colors.blue,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              _buildAccountMenuTile(
+                icon: Icons.person_outline_rounded,
+                iconColor: Colors.blue,
+                title: 'My Profile',
+                subtitle: 'View and edit your account information',
+                onTap: () {
+                  Navigator.pop(sheetContext);
+
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const ProfilePage(),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 10),
+              _buildAccountMenuTile(
+                icon: Icons.logout_rounded,
+                iconColor: Colors.red,
+                title: 'Log Out',
+                subtitle: 'Sign out of your admin account',
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _logout(context);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildAccountMenuTile({
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 14,
+          ),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: Colors.grey.shade200,
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: iconColor.withOpacity(0.10),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(
+                  icon,
+                  color: iconColor,
+                  size: 23,
+                ),
+              ),
+              const SizedBox(width: 13),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: Colors.grey.shade400,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Color _getStatusColor(String status) {
     switch (status) {
       case 'Pending':
@@ -25,6 +308,8 @@ class AdminDashboardScreen extends StatelessWidget {
         return Colors.deepPurple;
       case 'In Progress':
         return Colors.blue;
+      case 'Completion Submitted':
+        return Colors.amber.shade800;
       case 'Resolved':
         return Colors.green;
       case 'Rejected':
@@ -199,6 +484,60 @@ class AdminDashboardScreen extends StatelessWidget {
         backgroundColor: Colors.transparent,
         elevation: 0,
         foregroundColor: Colors.black87,
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 14),
+            child: Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.06),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: IconButton(
+                onPressed: () => _openAccountMenu(context),
+                tooltip: 'Account',
+                icon: Builder(
+                  builder: (context) {
+                    final currentUser =
+                        FirebaseAuth.instance.currentUser;
+                    final photoUrl = currentUser?.photoURL ?? '';
+
+                    if (photoUrl.isNotEmpty) {
+                      return ClipOval(
+                        child: Image.network(
+                          photoUrl,
+                          width: 27,
+                          height: 27,
+                          fit: BoxFit.cover,
+                          errorBuilder:
+                              (context, error, stackTrace) {
+                            return const Icon(
+                              Icons.person_outline_rounded,
+                              color: Colors.blue,
+                            );
+                          },
+                        ),
+                      );
+                    }
+
+                    return const Icon(
+                      Icons.person_outline_rounded,
+                      color: Colors.blue,
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
       body: StreamBuilder<List<WasteReport>>(
         stream: firestoreService.getAllReports(),
@@ -219,6 +558,11 @@ class AdminDashboardScreen extends StatelessWidget {
           }
 
           final allReports = snapshot.data ?? [];
+
+          final completionReviewCount = allReports
+              .where((report) => report.status == 'Completion Submitted')
+              .length;
+
           final recentReports = allReports.toList()
             ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
@@ -264,6 +608,15 @@ class AdminDashboardScreen extends StatelessWidget {
                 title: 'Manage Reports',
                 subtitle: 'View, edit, assign, and monitor reports',
                 onTap: () => onNavigateToReports('All'),
+              ),
+              _buildActionTile(
+                icon: Icons.fact_check_outlined,
+                color: Colors.amber.shade800,
+                title: 'Completion Reviews',
+                subtitle: completionReviewCount == 0
+                    ? 'No collector completion proofs waiting for review'
+                    : '$completionReviewCount collector completion proof${completionReviewCount == 1 ? '' : 's'} waiting for review',
+                onTap: () => onNavigateToReports('Completion Submitted'),
               ),
               _buildActionTile(
                 icon: Icons.map_outlined,

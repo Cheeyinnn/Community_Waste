@@ -1,9 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:geolocator/geolocator.dart';
+
 import '../models/waste_report.dart';
 
 class FirestoreService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
 
   CollectionReference<Map<String, dynamic>> get _reportsRef =>
       _firestore.collection('reports');
@@ -251,6 +254,15 @@ class FirestoreService {
       'collectorName': collectorName,
       'status': 'Assigned',
       'adminRemark': adminRemark,
+
+      // Reset completion-review fields when a report is newly assigned.
+      'completionVerificationStatus': '',
+      'completionRejectionReason': '',
+      'completionReviewedBy': '',
+      'completionReviewedAt': null,
+      'completionSubmittedAt': null,
+      'resolvedAt': null,
+
       'updatedAt': Timestamp.now(),
     };
 
@@ -294,6 +306,10 @@ class FirestoreService {
     });
   }
 
+  // ============================================================
+  // COLLECTOR REPORT TASK WORKFLOW
+  // ============================================================
+
   Future<void> startCollectorTask({
     required String reportId,
     String collectorRemark = '',
@@ -305,18 +321,229 @@ class FirestoreService {
     });
   }
 
+  /// Collector submits completion evidence for Admin review.
+  ///
+  /// IMPORTANT:
+  /// This does NOT make the report Resolved.
+  /// The final Resolved status is only set after Admin approval.
+  Future<void> submitCollectorCompletion({
+    required String reportId,
+    required String collectorRemark,
+    required String completionImageUrl,
+  }) async {
+    final user = _auth.currentUser;
+
+    if (user == null) {
+      throw Exception('Collector must be logged in.');
+    }
+
+    final cleanImageUrl = completionImageUrl.trim();
+
+    if (cleanImageUrl.isEmpty) {
+      throw Exception('Completion image is required.');
+    }
+
+    final reportRef = _reportsRef.doc(reportId);
+
+    await _firestore.runTransaction((transaction) async {
+      final reportDoc = await transaction.get(reportRef);
+
+      if (!reportDoc.exists) {
+        throw Exception('Report not found.');
+      }
+
+      final data = reportDoc.data() ?? <String, dynamic>{};
+
+      final collectorId =
+          data['collectorId']?.toString().trim() ?? '';
+
+      final status =
+          data['status']?.toString().trim() ?? '';
+
+      if (collectorId != user.uid) {
+        throw Exception(
+          'This report is not assigned to the current collector.',
+        );
+      }
+
+      if (status != 'In Progress') {
+        throw Exception(
+          'The task must be In Progress before completion can be submitted.',
+        );
+      }
+
+      transaction.update(reportRef, {
+        'status': 'Completion Submitted',
+        'collectorRemark': collectorRemark.trim(),
+        'completionImageUrl': cleanImageUrl,
+
+        // Admin review state.
+        'completionVerificationStatus': 'pending',
+        'completionSubmittedAt': Timestamp.now(),
+        'completionReviewedBy': '',
+        'completionReviewedAt': null,
+        'completionRejectionReason': '',
+
+        'updatedAt': Timestamp.now(),
+      });
+    });
+  }
+
+  /// Backward-compatible method.
+  ///
+  /// Existing Collector UI still calls completeCollectorTask().
+  /// For now it redirects to the new submission workflow so the
+  /// report waits for Admin verification instead of becoming Resolved.
   Future<void> completeCollectorTask({
     required String reportId,
     required String collectorRemark,
     required String completionImageUrl,
   }) async {
-    await _reportsRef.doc(reportId).update({
-      'status': 'Resolved',
-      'collectorRemark': collectorRemark,
-      'completionImageUrl': completionImageUrl,
-      'updatedAt': Timestamp.now(),
+    await submitCollectorCompletion(
+      reportId: reportId,
+      collectorRemark: collectorRemark,
+      completionImageUrl: completionImageUrl,
+    );
+  }
+
+  // ============================================================
+  // ADMIN COMPLETION VERIFICATION
+  // ============================================================
+
+  Future<String> _requireAdminUid() async {
+    final user = _auth.currentUser;
+
+    if (user == null) {
+      throw Exception('Admin must be logged in.');
+    }
+
+    final userDoc = await _usersRef.doc(user.uid).get();
+    final role =
+        userDoc.data()?['role']?.toString().trim().toLowerCase() ?? '';
+
+    if (role != 'admin') {
+      throw Exception('Only Admin can review completion evidence.');
+    }
+
+    return user.uid;
+  }
+
+  /// Admin approves the collector's completion evidence.
+  /// The report becomes permanently Resolved.
+  Future<void> approveCollectorCompletion({
+    required String reportId,
+  }) async {
+    final adminUid = await _requireAdminUid();
+    final reportRef = _reportsRef.doc(reportId);
+
+    await _firestore.runTransaction((transaction) async {
+      final reportDoc = await transaction.get(reportRef);
+
+      if (!reportDoc.exists) {
+        throw Exception('Report not found.');
+      }
+
+      final data = reportDoc.data() ?? <String, dynamic>{};
+
+      final status =
+          data['status']?.toString().trim() ?? '';
+
+      final verificationStatus =
+          data['completionVerificationStatus']
+                  ?.toString()
+                  .trim()
+                  .toLowerCase() ??
+              '';
+
+      final completionImageUrl =
+          data['completionImageUrl']?.toString().trim() ?? '';
+
+      if (status != 'Completion Submitted' ||
+          verificationStatus != 'pending') {
+        throw Exception(
+          'This report is not waiting for completion verification.',
+        );
+      }
+
+      if (completionImageUrl.isEmpty) {
+        throw Exception(
+          'Completion evidence is missing and cannot be approved.',
+        );
+      }
+
+      final now = Timestamp.now();
+
+      transaction.update(reportRef, {
+        'status': 'Resolved',
+        'completionVerificationStatus': 'approved',
+        'completionReviewedBy': adminUid,
+        'completionReviewedAt': now,
+        'completionRejectionReason': '',
+        'resolvedAt': now,
+        'updatedAt': now,
+      });
     });
   }
+
+  /// Admin rejects the submitted completion proof.
+  ///
+  /// The report returns to In Progress so the same collector can
+  /// correct the work / evidence and submit again.
+  Future<void> rejectCollectorCompletion({
+    required String reportId,
+    required String rejectionReason,
+  }) async {
+    final cleanReason = rejectionReason.trim();
+
+    if (cleanReason.isEmpty) {
+      throw Exception('Please enter a rejection reason.');
+    }
+
+    final adminUid = await _requireAdminUid();
+    final reportRef = _reportsRef.doc(reportId);
+
+    await _firestore.runTransaction((transaction) async {
+      final reportDoc = await transaction.get(reportRef);
+
+      if (!reportDoc.exists) {
+        throw Exception('Report not found.');
+      }
+
+      final data = reportDoc.data() ?? <String, dynamic>{};
+
+      final status =
+          data['status']?.toString().trim() ?? '';
+
+      final verificationStatus =
+          data['completionVerificationStatus']
+                  ?.toString()
+                  .trim()
+                  .toLowerCase() ??
+              '';
+
+      if (status != 'Completion Submitted' ||
+          verificationStatus != 'pending') {
+        throw Exception(
+          'This report is not waiting for completion verification.',
+        );
+      }
+
+      final now = Timestamp.now();
+
+      transaction.update(reportRef, {
+        'status': 'In Progress',
+        'completionVerificationStatus': 'rejected',
+        'completionRejectionReason': cleanReason,
+        'completionReviewedBy': adminUid,
+        'completionReviewedAt': now,
+        'updatedAt': now,
+      });
+    });
+  }
+
+  // ============================================================
+  // OTHER
+  // ============================================================
 
   Future<void> deleteReport(String reportId) async {
     await _reportsRef.doc(reportId).delete();

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -21,7 +22,13 @@ class CollectorTaskScreen extends StatefulWidget {
 class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
   late String _selectedFilter;
 
-  final List<String> _filters = ['All', 'Assigned', 'In Progress', 'Resolved'];
+  final List<String> _filters = [
+    'All',
+    'Assigned',
+    'In Progress',
+    'Completion Submitted',
+    'Resolved',
+  ];
 
   final StorageService _storageService = StorageService();
 
@@ -50,6 +57,10 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
         return Colors.deepPurple;
       case 'In Progress':
         return Colors.blue;
+      case 'Completion Submitted':
+        return Colors.amber.shade800;
+      case 'Submit Completion':
+        return Colors.orange;
       case 'Resolved':
         return Colors.green;
       case 'Rejected':
@@ -186,10 +197,16 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
                         );
                       }
                     },
-                    icon: const Icon(Icons.play_arrow_rounded),
-                    label: const Text(
-                      'Start Task & Navigate',
-                      style: TextStyle(fontWeight: FontWeight.bold),
+                    icon: Icon(
+                      report.status == 'Assigned'
+                          ? Icons.play_arrow_rounded
+                          : Icons.navigation_rounded,
+                    ),
+                    label: Text(
+                      report.status == 'Assigned'
+                          ? 'Start Task & Navigate'
+                          : 'Navigate to Location',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.orange,
@@ -215,18 +232,24 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
     WasteReport report,
     FirestoreService firestoreService,
   ) async {
-    String selectedStatus = report.status;
+    if (report.status == 'Completion Submitted' ||
+        report.status == 'Resolved') {
+      return;
+    }
+
+    String selectedAction =
+        report.status == 'Assigned' ? 'Assigned' : 'In Progress';
+
     final TextEditingController remarkController = TextEditingController(
       text: report.collectorRemark,
     );
+
     File? completionImageFile;
     bool isSaving = false;
 
-    final List<String> statuses = report.status == 'Assigned'
-        ? ['Assigned', 'In Progress', 'Resolved']
-        : report.status == 'In Progress'
-        ? ['In Progress', 'Resolved']
-        : ['Resolved'];
+    final List<String> actions = report.status == 'Assigned'
+        ? ['Assigned', 'In Progress']
+        : ['In Progress', 'Submit Completion'];
 
     Future<void> pickCompletionImage(StateSetter setStateSheet) async {
       final picked = await ImagePicker().pickImage(
@@ -249,6 +272,11 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
       builder: (sheetContext) {
         return StatefulBuilder(
           builder: (builderContext, setStateSheet) {
+            final bool isSubmittingCompletion =
+                selectedAction == 'Submit Completion';
+
+            final Color selectedColor = _statusColor(selectedAction);
+
             return Container(
               padding: EdgeInsets.only(
                 bottom: MediaQuery.of(sheetContext).viewInsets.bottom + 20,
@@ -258,7 +286,9 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
               ),
               decoration: const BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+                borderRadius: BorderRadius.vertical(
+                  top: Radius.circular(30),
+                ),
               ),
               child: SingleChildScrollView(
                 child: Column(
@@ -277,15 +307,25 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
                     ),
                     const SizedBox(height: 20),
                     const Text(
-                      'Update Task Status',
+                      'Update Report Task',
                       style: TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Update your progress or submit completion evidence for '
+                      'Admin verification.',
+                      style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontSize: 13,
+                        height: 1.35,
+                      ),
+                    ),
                     const SizedBox(height: 20),
                     const Text(
-                      'Status',
+                      'Action',
                       style: TextStyle(
                         fontWeight: FontWeight.w600,
                         color: Colors.black54,
@@ -294,25 +334,32 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
                     const SizedBox(height: 8),
                     Wrap(
                       spacing: 10,
-                      children: statuses.map((status) {
-                        final bool isSelected = selectedStatus == status;
-                        final Color color = _statusColor(status);
+                      runSpacing: 8,
+                      children: actions.map((action) {
+                        final bool isSelected =
+                            selectedAction == action;
+                        final Color color = _statusColor(action);
 
                         return ChoiceChip(
-                          label: Text(status),
+                          label: Text(action),
                           selected: isSelected,
                           onSelected: (val) {
-                            if (val) {
-                              setStateSheet(() {
-                                selectedStatus = status;
-                              });
-                            }
+                            if (!val) return;
+
+                            setStateSheet(() {
+                              selectedAction = action;
+
+                              if (action != 'Submit Completion') {
+                                completionImageFile = null;
+                              }
+                            });
                           },
                           selectedColor: color,
                           backgroundColor: Colors.grey.shade100,
                           showCheckmark: false,
                           labelStyle: TextStyle(
-                            color: isSelected ? Colors.white : Colors.black87,
+                            color:
+                                isSelected ? Colors.white : Colors.black87,
                             fontWeight: FontWeight.bold,
                           ),
                           shape: RoundedRectangleBorder(
@@ -322,13 +369,53 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
                         );
                       }).toList(),
                     ),
+                    if (isSubmittingCompletion) ...[
+                      const SizedBox(height: 14),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(13),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.shade50,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: Colors.amber.shade200,
+                          ),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              Icons.fact_check_outlined,
+                              color: Colors.amber.shade900,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 9),
+                            Expanded(
+                              child: Text(
+                                'Submitting completion does not immediately '
+                                'resolve the report. Admin will review your '
+                                'photo and remark first.',
+                                style: TextStyle(
+                                  color: Colors.amber.shade900,
+                                  fontSize: 12.5,
+                                  height: 1.35,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 20),
                     TextField(
                       controller: remarkController,
                       maxLines: 3,
                       decoration: InputDecoration(
                         labelText: 'Collector Remark',
-                        hintText: 'Enter task progress note...',
+                        hintText: isSubmittingCompletion
+                            ? 'Describe the completed work...'
+                            : 'Enter task progress note...',
                         filled: true,
                         fillColor: Colors.grey.shade50,
                         border: OutlineInputBorder(
@@ -344,27 +431,34 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(height: 20),
-                    if (selectedStatus == 'Resolved') ...[
+                    if (isSubmittingCompletion) ...[
+                      const SizedBox(height: 20),
                       const Text(
-                        'Proof of Completion',
+                        'Completion Evidence',
                         style: TextStyle(
                           fontWeight: FontWeight.w600,
                           color: Colors.black54,
                         ),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 5),
+                      Text(
+                        'Upload a new photo showing the completed work.',
+                        style: TextStyle(
+                          color: Colors.grey.shade600,
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
                       GestureDetector(
-                        onTap: () => pickCompletionImage(setStateSheet),
+                        onTap: () =>
+                            pickCompletionImage(setStateSheet),
                         child: Container(
-                          height: 140,
+                          height: 160,
                           width: double.infinity,
                           decoration: BoxDecoration(
                             color: Colors.orange.shade50,
                             borderRadius: BorderRadius.circular(16),
-                            border:
-                                completionImageFile == null &&
-                                    report.completionImageUrl.isEmpty
+                            border: completionImageFile == null
                                 ? Border.all(
                                     color: Colors.orange.shade300,
                                     width: 2,
@@ -379,25 +473,18 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
                                     fit: BoxFit.cover,
                                   ),
                                 )
-                              : report.completionImageUrl.isNotEmpty
-                              ? ClipRRect(
-                                  borderRadius: BorderRadius.circular(16),
-                                  child: Image.network(
-                                    report.completionImageUrl,
-                                    fit: BoxFit.cover,
-                                  ),
-                                )
                               : Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.center,
                                   children: [
                                     Icon(
                                       Icons.add_a_photo_rounded,
-                                      size: 40,
+                                      size: 42,
                                       color: Colors.orange.shade400,
                                     ),
                                     const SizedBox(height: 8),
                                     Text(
-                                      'Tap to upload photo',
+                                      'Tap to upload new proof photo',
                                       style: TextStyle(
                                         color: Colors.orange.shade700,
                                         fontWeight: FontWeight.bold,
@@ -408,13 +495,15 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
                         ),
                       ),
                       const SizedBox(height: 24),
-                    ],
+                    ] else
+                      const SizedBox(height: 20),
                     SizedBox(
                       width: double.infinity,
                       height: 55,
                       child: ElevatedButton(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.orange,
+                          backgroundColor: selectedColor,
+                          foregroundColor: Colors.white,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(16),
                           ),
@@ -423,9 +512,8 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
                         onPressed: isSaving
                             ? null
                             : () async {
-                                if (selectedStatus == 'Resolved' &&
-                                    completionImageFile == null &&
-                                    report.completionImageUrl.isEmpty) {
+                                if (isSubmittingCompletion &&
+                                    completionImageFile == null) {
                                   if (!screenContext.mounted) return;
 
                                   ScaffoldMessenger.of(
@@ -433,7 +521,7 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
                                   ).showSnackBar(
                                     const SnackBar(
                                       content: Text(
-                                        'Please upload a completion image',
+                                        'Please upload a new completion image',
                                       ),
                                       backgroundColor: Colors.red,
                                     ),
@@ -446,35 +534,35 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
                                 });
 
                                 try {
-                                  if (selectedStatus == 'In Progress') {
-                                    await firestoreService.startCollectorTask(
+                                  if (selectedAction ==
+                                      'In Progress') {
+                                    await firestoreService
+                                        .startCollectorTask(
                                       reportId: report.id,
-                                      collectorRemark: remarkController.text
-                                          .trim(),
+                                      collectorRemark:
+                                          remarkController.text.trim(),
                                     );
-                                  } else if (selectedStatus == 'Resolved') {
-                                    String completionImageUrl =
-                                        report.completionImageUrl;
-
-                                    if (completionImageFile != null) {
-                                      completionImageUrl = await _storageService
-                                          .uploadCompletionImage(
-                                            completionImageFile!,
-                                          );
-                                    }
+                                  } else if (selectedAction ==
+                                      'Submit Completion') {
+                                    final completionImageUrl =
+                                        await _storageService
+                                            .uploadCompletionImage(
+                                      completionImageFile!,
+                                    );
 
                                     await firestoreService
-                                        .completeCollectorTask(
-                                          reportId: report.id,
-                                          collectorRemark: remarkController.text
-                                              .trim(),
-                                          completionImageUrl:
-                                              completionImageUrl,
-                                        );
-                                  } else {
-                                    await firestoreService.updateReportStatus(
+                                        .submitCollectorCompletion(
                                       reportId: report.id,
-                                      status: selectedStatus,
+                                      collectorRemark:
+                                          remarkController.text.trim(),
+                                      completionImageUrl:
+                                          completionImageUrl,
+                                    );
+                                  } else {
+                                    await firestoreService
+                                        .updateReportStatus(
+                                      reportId: report.id,
+                                      status: selectedAction,
                                     );
                                   }
 
@@ -485,11 +573,16 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
                                   ScaffoldMessenger.of(
                                     screenContext,
                                   ).showSnackBar(
-                                    const SnackBar(
+                                    SnackBar(
                                       content: Text(
-                                        'Task updated successfully!',
+                                        isSubmittingCompletion
+                                            ? 'Completion submitted for Admin review.'
+                                            : 'Task updated successfully!',
                                       ),
-                                      backgroundColor: Colors.green,
+                                      backgroundColor:
+                                          isSubmittingCompletion
+                                              ? Colors.orange
+                                              : Colors.green,
                                     ),
                                   );
                                 } catch (e) {
@@ -512,12 +605,19 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
                                 }
                               },
                         child: isSaving
-                            ? const CircularProgressIndicator(
-                                color: Colors.white,
+                            ? const SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2.4,
+                                ),
                               )
-                            : const Text(
-                                'Save Changes',
-                                style: TextStyle(
+                            : Text(
+                                isSubmittingCompletion
+                                    ? 'Submit for Admin Review'
+                                    : 'Save Changes',
+                                style: const TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
                                   color: Colors.white,
@@ -553,9 +653,26 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF7F9FC),
       appBar: AppBar(
-        title: const Text(
-          'My Tasks',
-          style: TextStyle(fontWeight: FontWeight.bold),
+        toolbarHeight: 72,
+        title: const Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Report Tasks',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            SizedBox(height: 2),
+            Text(
+              'Waste reports assigned to you by Admin',
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w500,
+                color: Colors.black54,
+              ),
+            ),
+          ],
         ),
         centerTitle: true,
         backgroundColor: Colors.transparent,
@@ -650,7 +767,7 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
                   vertical: 8,
                 ),
                 child: Text(
-                  'Found ${filteredReports.length} tasks',
+                  'Found ${filteredReports.length} report task${filteredReports.length == 1 ? '' : 's'}',
                   style: TextStyle(
                     color: Colors.grey.shade500,
                     fontWeight: FontWeight.w600,
@@ -671,7 +788,9 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
                             ),
                             const SizedBox(height: 16),
                             Text(
-                              'No $_selectedFilter tasks right now',
+                              _selectedFilter == 'All'
+                                  ? 'No report tasks right now'
+                                  : 'No $_selectedFilter report tasks right now',
                               style: TextStyle(
                                 color: Colors.grey.shade500,
                                 fontWeight: FontWeight.bold,
@@ -708,216 +827,461 @@ class _CollectorTaskScreenState extends State<CollectorTaskScreen> {
     WasteReport report,
     FirestoreService firestoreService,
   ) {
-    final statusColor = _statusColor(report.status);
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('reports')
+          .doc(report.id)
+          .snapshots(),
+      builder: (context, reviewSnapshot) {
+        final reviewData =
+            reviewSnapshot.data?.data() ?? <String, dynamic>{};
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 15,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(24),
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => CollectorReportDetailScreen(report: report),
+        final verificationStatus =
+            reviewData['completionVerificationStatus']
+                    ?.toString()
+                    .trim()
+                    .toLowerCase() ??
+                '';
+
+        final rejectionReason =
+            reviewData['completionRejectionReason']
+                    ?.toString()
+                    .trim() ??
+                '';
+
+        final bool isWaitingForReview =
+            report.status == 'Completion Submitted';
+
+        final bool isResolved = report.status == 'Resolved';
+
+        final bool wasCompletionRejected =
+            report.status == 'In Progress' &&
+            verificationStatus == 'rejected';
+
+        final statusColor = _statusColor(report.status);
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.03),
+                blurRadius: 15,
+                offset: const Offset(0, 8),
               ),
-            );
-          },
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+            ],
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(24),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        CollectorReportDetailScreen(report: report),
+                  ),
+                );
+              },
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
                   children: [
-                    Container(
-                      width: 85,
-                      height: 85,
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade100,
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(18),
-                        child: report.imageUrl.isNotEmpty
-                            ? Image.network(
-                                report.imageUrl,
-                                fit: BoxFit.cover,
-                                errorBuilder: (context, error, stackTrace) {
-                                  return Icon(
-                                    Icons.broken_image_outlined,
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: 85,
+                          height: 85,
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade100,
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(18),
+                            child: report.imageUrl.isNotEmpty
+                                ? Image.network(
+                                    report.imageUrl,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (
+                                      context,
+                                      error,
+                                      stackTrace,
+                                    ) {
+                                      return Icon(
+                                        Icons.broken_image_outlined,
+                                        color: Colors.grey.shade400,
+                                      );
+                                    },
+                                  )
+                                : Icon(
+                                    Icons.image_outlined,
                                     color: Colors.grey.shade400,
-                                  );
-                                },
-                              )
-                            : Icon(
-                                Icons.image_outlined,
-                                color: Colors.grey.shade400,
-                              ),
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: statusColor.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Text(
-                                  report.status,
-                                  style: TextStyle(
-                                    color: statusColor,
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w900,
                                   ),
-                                ),
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment:
+                                CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Flexible(
+                                    child: Container(
+                                      padding:
+                                          const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color:
+                                            statusColor.withOpacity(0.1),
+                                        borderRadius:
+                                            BorderRadius.circular(8),
+                                      ),
+                                      child: Text(
+                                        report.status,
+                                        maxLines: 1,
+                                        overflow:
+                                            TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          color: statusColor,
+                                          fontSize: 10,
+                                          fontWeight:
+                                              FontWeight.w900,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    _formatDate(report.createdAt),
+                                    style: TextStyle(
+                                      color: Colors.grey.shade400,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ],
                               ),
+                              const SizedBox(height: 8),
                               Text(
-                                _formatDate(report.createdAt),
-                                style: TextStyle(
-                                  color: Colors.grey.shade400,
-                                  fontSize: 11,
+                                report.title,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                  color: Colors.black87,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 8),
+                              InkWell(
+                                onTap: () => _showNavigationOptions(
+                                  context,
+                                  report,
+                                  firestoreService,
+                                ),
+                                borderRadius: BorderRadius.circular(8),
+                                child: Padding(
+                                  padding:
+                                      const EdgeInsets.symmetric(
+                                    vertical: 4,
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.near_me_rounded,
+                                        size: 16,
+                                        color: Colors.blue.shade600,
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Expanded(
+                                        child: Text(
+                                          report.location,
+                                          style: TextStyle(
+                                            color:
+                                                Colors.blue.shade700,
+                                            fontSize: 13,
+                                            fontWeight:
+                                                FontWeight.w600,
+                                            decoration:
+                                                TextDecoration
+                                                    .underline,
+                                          ),
+                                          maxLines: 1,
+                                          overflow:
+                                              TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 8),
-                          Text(
-                            report.title,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                              color: Colors.black87,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                    if (isWaitingForReview) ...[
+                      const SizedBox(height: 14),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.shade50,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: Colors.amber.shade200,
                           ),
-                          const SizedBox(height: 8),
-                          InkWell(
-                            onTap: () => _showNavigationOptions(
-                              context,
-                              report,
-                              firestoreService,
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              Icons.hourglass_top_rounded,
+                              color: Colors.amber.shade900,
+                              size: 20,
                             ),
-                            borderRadius: BorderRadius.circular(8),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 4),
-                              child: Row(
+                            const SizedBox(width: 9),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.start,
                                 children: [
-                                  Icon(
-                                    Icons.near_me_rounded,
-                                    size: 16,
-                                    color: Colors.blue.shade600,
+                                  Text(
+                                    'Waiting for Admin Review',
+                                    style: TextStyle(
+                                      color: Colors.amber.shade900,
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 12.5,
+                                    ),
                                   ),
-                                  const SizedBox(width: 6),
-                                  Expanded(
-                                    child: Text(
-                                      report.location,
-                                      style: TextStyle(
-                                        color: Colors.blue.shade700,
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
-                                        decoration: TextDecoration.underline,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    'Your completion evidence has been '
+                                    'submitted. This task is locked until '
+                                    'Admin approves or rejects it.',
+                                    style: TextStyle(
+                                      color: Colors.amber.shade900,
+                                      fontSize: 11.5,
+                                      height: 1.35,
                                     ),
                                   ),
                                 ],
                               ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                Divider(color: Colors.grey.shade100, height: 1),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) =>
-                                  CollectorReportDetailScreen(report: report),
+                    ],
+                    if (wasCompletionRejected) ...[
+                      const SizedBox(height: 14),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade50,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: Colors.red.shade100,
+                          ),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              Icons.cancel_outlined,
+                              color: Colors.red.shade700,
+                              size: 20,
                             ),
-                          );
-                        },
-                        style: OutlinedButton.styleFrom(
-                          side: BorderSide(color: Colors.grey.shade300),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                        child: Text(
-                          'View Details',
-                          style: TextStyle(
-                            color: Colors.grey.shade700,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: report.status == 'Resolved'
-                            ? null
-                            : () => _showUpdateBottomSheet(
-                                context,
-                                report,
-                                firestoreService,
+                            const SizedBox(width: 9),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Completion Rejected',
+                                    style: TextStyle(
+                                      color: Colors.red.shade800,
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 12.5,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    rejectionReason.isEmpty
+                                        ? 'Admin rejected the completion '
+                                            'evidence. Please submit a new '
+                                            'proof photo.'
+                                        : 'Admin feedback: $rejectionReason',
+                                    style: TextStyle(
+                                      color: Colors.red.shade800,
+                                      fontSize: 11.5,
+                                      height: 1.35,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Please correct the issue and submit '
+                                    'new completion evidence.',
+                                    style: TextStyle(
+                                      color: Colors.red.shade700,
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
                               ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: statusColor,
-                          foregroundColor: Colors.white,
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                        child: const Text(
-                          'Update Status',
-                          style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                          ],
                         ),
                       ),
+                    ],
+                    if (isResolved) ...[
+                      const SizedBox(height: 14),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.green.shade50,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: Colors.green.shade100,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.verified_rounded,
+                              color: Colors.green.shade700,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 9),
+                            Expanded(
+                              child: Text(
+                                'Completion approved by Admin. '
+                                'This report is resolved.',
+                                style: TextStyle(
+                                  color: Colors.green.shade800,
+                                  fontSize: 11.8,
+                                  height: 1.35,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    Divider(
+                      color: Colors.grey.shade100,
+                      height: 1,
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      CollectorReportDetailScreen(
+                                    report: report,
+                                  ),
+                                ),
+                              );
+                            },
+                            style: OutlinedButton.styleFrom(
+                              side: BorderSide(
+                                color: Colors.grey.shade300,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius:
+                                    BorderRadius.circular(12),
+                              ),
+                              padding:
+                                  const EdgeInsets.symmetric(
+                                vertical: 12,
+                              ),
+                            ),
+                            child: Text(
+                              'View Details',
+                              style: TextStyle(
+                                color: Colors.grey.shade700,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed:
+                                isWaitingForReview || isResolved
+                                    ? null
+                                    : () => _showUpdateBottomSheet(
+                                          context,
+                                          report,
+                                          firestoreService,
+                                        ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: statusColor,
+                              foregroundColor: Colors.white,
+                              disabledBackgroundColor:
+                                  isResolved
+                                      ? Colors.green.shade100
+                                      : Colors.amber.shade100,
+                              disabledForegroundColor:
+                                  isResolved
+                                      ? Colors.green.shade800
+                                      : Colors.amber.shade900,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius:
+                                    BorderRadius.circular(12),
+                              ),
+                              padding:
+                                  const EdgeInsets.symmetric(
+                                vertical: 12,
+                              ),
+                            ),
+                            child: Text(
+                              isWaitingForReview
+                                  ? 'Waiting for Review'
+                                  : isResolved
+                                      ? 'Resolved'
+                                      : wasCompletionRejected
+                                          ? 'Resubmit Proof'
+                                          : 'Update Status',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12.5,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
-              ],
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
+
 }

@@ -86,6 +86,14 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     Navigator.pop(context, true);
   }
 
+  String _displayStatus(String status) {
+    if (!widget.isAdmin && status == 'Completion Submitted') {
+      return 'Under Verification';
+    }
+
+    return status;
+  }
+
   Color _statusColor(String status) {
     switch (status) {
       case 'Pending':
@@ -94,6 +102,9 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         return Colors.deepPurple;
       case 'In Progress':
         return Colors.blue;
+      case 'Completion Submitted':
+      case 'Under Verification':
+        return Colors.amber.shade800;
       case 'Resolved':
         return Colors.green;
       case 'Rejected':
@@ -684,9 +695,564 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     }
   }
 
+  Future<void> _showCompletionImagePreview(
+    String imageUrl,
+  ) async {
+    await showDialog<void>(
+      context: context,
+      barrierColor: Colors.black87,
+      builder: (dialogContext) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.all(14),
+          child: Stack(
+            alignment: Alignment.topRight,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(18),
+                child: InteractiveViewer(
+                  minScale: 0.8,
+                  maxScale: 4,
+                  child: Image.network(
+                    imageUrl,
+                    fit: BoxFit.contain,
+                    loadingBuilder: (
+                      context,
+                      child,
+                      loadingProgress,
+                    ) {
+                      if (loadingProgress == null) {
+                        return child;
+                      }
+
+                      return Container(
+                        constraints: const BoxConstraints(
+                          minHeight: 260,
+                        ),
+                        color: Colors.black,
+                        child: const Center(
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                          ),
+                        ),
+                      );
+                    },
+                    errorBuilder: (
+                      context,
+                      error,
+                      stackTrace,
+                    ) {
+                      return Container(
+                        height: 260,
+                        color: Colors.black,
+                        child: const Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.broken_image_outlined,
+                                color: Colors.white70,
+                                size: 52,
+                              ),
+                              SizedBox(height: 10),
+                              Text(
+                                'Unable to load completion photo',
+                                style: TextStyle(
+                                  color: Colors.white70,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(8),
+                child: Material(
+                  color: Colors.black.withOpacity(0.65),
+                  shape: const CircleBorder(),
+                  child: IconButton(
+                    onPressed: () {
+                      Navigator.pop(dialogContext);
+                    },
+                    icon: const Icon(
+                      Icons.close_rounded,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildCompletionMetaRow({
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            icon,
+            size: 19,
+            color: Colors.green.shade700,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: RichText(
+              text: TextSpan(
+                style: const TextStyle(
+                  fontSize: 13.5,
+                  height: 1.35,
+                  color: Colors.black87,
+                ),
+                children: [
+                  TextSpan(
+                    text: '$label: ',
+                    style: TextStyle(
+                      color: Colors.grey.shade600,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  TextSpan(
+                    text: value,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCompletionProofSection() {
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('reports')
+          .doc(widget.report.id)
+          .snapshots(),
+      builder: (context, snapshot) {
+        final data =
+            snapshot.data?.data() ?? <String, dynamic>{};
+
+        final liveCompletionUrl =
+            data['completionImageUrl']?.toString().trim() ?? '';
+
+        final completionUrl = liveCompletionUrl.isNotEmpty
+            ? liveCompletionUrl
+            : _completionImageUrl.trim();
+
+        final collectorName =
+            data['collectorName']?.toString().trim() ?? '';
+
+        final collectorRemark =
+            data['collectorRemark']?.toString().trim() ?? '';
+
+        final completionSubmittedAt =
+            data['completionSubmittedAt'];
+
+        final completionApprovedAt =
+            data['completionReviewedAt'] ??
+            data['resolvedAt'] ??
+            data['updatedAt'] ??
+            widget.report.updatedAt;
+
+        final liveStatus =
+            data['status']?.toString().trim() ?? _status;
+
+        // --------------------------------------------------------
+        // USER: COMPLETION IS WAITING FOR ADMIN VERIFICATION
+        // --------------------------------------------------------
+        // Do not present an unverified collector photo as final
+        // "Completion Proof". The user only sees that evidence has
+        // been submitted and is currently being verified.
+        if (!widget.isAdmin &&
+            liveStatus == 'Completion Submitted') {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 26),
+              Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: Colors.amber.shade50,
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                    child: Icon(
+                      Icons.fact_check_outlined,
+                      color: Colors.amber.shade800,
+                      size: 23,
+                    ),
+                  ),
+                  const SizedBox(width: 11),
+                  const Expanded(
+                    child: Text(
+                      'Completion Update',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.shade50,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      'Under Verification',
+                      style: TextStyle(
+                        color: Colors.amber.shade800,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.amber.shade50.withOpacity(0.55),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: Colors.amber.shade200,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          Icons.hourglass_top_rounded,
+                          color: Colors.amber.shade800,
+                          size: 22,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'The assigned collector has submitted completion '
+                            'evidence. An Admin is reviewing it before this '
+                            'report can be marked as Resolved.',
+                            style: TextStyle(
+                              color: Colors.amber.shade900,
+                              fontSize: 13,
+                              height: 1.45,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (collectorName.isNotEmpty ||
+                        completionSubmittedAt != null) ...[
+                      const SizedBox(height: 16),
+                      Divider(
+                        color: Colors.amber.shade200,
+                        height: 1,
+                      ),
+                      const SizedBox(height: 14),
+                      _buildCompletionMetaRow(
+                        icon: Icons.person_outline_rounded,
+                        label: 'Submitted by',
+                        value: collectorName.isNotEmpty
+                            ? collectorName
+                            : 'Assigned collector',
+                      ),
+                      _buildCompletionMetaRow(
+                        icon: Icons.upload_rounded,
+                        label: 'Submitted at',
+                        value: completionSubmittedAt != null
+                            ? _formatTimestamp(completionSubmittedAt)
+                            : '-',
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          );
+        }
+
+        // Rejected evidence is not shown to the user as final proof.
+        if (!widget.isAdmin && liveStatus != 'Resolved') {
+          return const SizedBox.shrink();
+        }
+
+        // Final completion proof is shown only after Admin approval.
+        if (liveStatus != 'Resolved') {
+          return const SizedBox.shrink();
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 26),
+            Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(13),
+                  ),
+                  child: Icon(
+                    Icons.verified_rounded,
+                    color: Colors.green.shade700,
+                    size: 23,
+                  ),
+                ),
+                const SizedBox(width: 11),
+                const Expanded(
+                  child: Text(
+                    'Completion Proof',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.black87,
+                    ),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    'Resolved',
+                    style: TextStyle(
+                      color: Colors.green.shade700,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: Colors.green.shade100,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.025),
+                    blurRadius: 12,
+                    offset: const Offset(0, 5),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (completionUrl.isNotEmpty) ...[
+                    GestureDetector(
+                      onTap: () {
+                        _showCompletionImagePreview(completionUrl);
+                      },
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: AspectRatio(
+                          aspectRatio: 16 / 9,
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              Image.network(
+                                completionUrl,
+                                fit: BoxFit.cover,
+                                loadingBuilder: (
+                                  context,
+                                  child,
+                                  loadingProgress,
+                                ) {
+                                  if (loadingProgress == null) {
+                                    return child;
+                                  }
+
+                                  return Container(
+                                    color: Colors.grey.shade100,
+                                    alignment: Alignment.center,
+                                    child: const CircularProgressIndicator(),
+                                  );
+                                },
+                                errorBuilder: (
+                                  context,
+                                  error,
+                                  stackTrace,
+                                ) {
+                                  return Container(
+                                    color: Colors.grey.shade100,
+                                    alignment: Alignment.center,
+                                    child: Icon(
+                                      Icons.broken_image_outlined,
+                                      color: Colors.grey.shade400,
+                                      size: 46,
+                                    ),
+                                  );
+                                },
+                              ),
+                              Positioned(
+                                left: 0,
+                                right: 0,
+                                bottom: 0,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 9,
+                                  ),
+                                  color: Colors.black.withOpacity(0.52),
+                                  child: const Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        Icons.zoom_in_rounded,
+                                        color: Colors.white,
+                                        size: 17,
+                                      ),
+                                      SizedBox(width: 7),
+                                      Text(
+                                        'Tap photo to view',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                  ],
+                  _buildCompletionMetaRow(
+                    icon: Icons.person_outline_rounded,
+                    label: 'Submitted by',
+                    value: collectorName.isNotEmpty
+                        ? collectorName
+                        : 'Assigned collector',
+                  ),
+                  _buildCompletionMetaRow(
+                    icon: Icons.upload_rounded,
+                    label: 'Submitted at',
+                    value: completionSubmittedAt != null
+                        ? _formatTimestamp(completionSubmittedAt)
+                        : '-',
+                  ),
+                  _buildCompletionMetaRow(
+                    icon: Icons.verified_outlined,
+                    label: 'Approved at',
+                    value: _formatTimestamp(completionApprovedAt),
+                  ),
+                  if (collectorRemark.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(13),
+                      decoration: BoxDecoration(
+                        color: Colors.green.shade50.withOpacity(0.45),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Collector Remark',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 12.5,
+                            ),
+                          ),
+                          const SizedBox(height: 5),
+                          Text(
+                            collectorRemark,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              height: 1.4,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 14),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.info_outline_rounded,
+                        color: Colors.grey.shade500,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'This completion evidence was submitted by the '
+                          'assigned collector and approved by Admin before '
+                          'the report was marked as Resolved.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade600,
+                            height: 1.45,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final statusColor = _statusColor(_status);
+    final displayStatus = _displayStatus(_status);
+    final statusColor = _statusColor(displayStatus);
     final priorityColor = _priorityColor(_priority);
 
     return WillPopScope(
@@ -820,7 +1386,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                             borderRadius: BorderRadius.circular(20),
                           ),
                           child: Text(
-                            _status,
+                            displayStatus,
                             style: TextStyle(
                               color: statusColor,
                               fontWeight: FontWeight.bold,
@@ -895,25 +1461,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                         color: Colors.grey.shade800,
                       ),
                     ),
-                    const SizedBox(height: 24),
-                    if (_completionImageUrl.isNotEmpty) ...[
-                      const Text(
-                        'Completion Proof',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: Image.network(
-                          _completionImageUrl,
-                          errorBuilder: (context, error, stackTrace) =>
-                              const Icon(Icons.broken_image),
-                        ),
-                      ),
-                    ],
+                    _buildCompletionProofSection(),
                   ],
                 ),
               ),

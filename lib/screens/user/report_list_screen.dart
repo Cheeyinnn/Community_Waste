@@ -31,6 +31,7 @@ class _ReportListScreenState extends State<ReportListScreen> {
     'Pending',
     'Assigned',
     'In Progress',
+    'Under Verification',
     'Resolved',
     'Rejected',
   ];
@@ -97,6 +98,22 @@ class _ReportListScreenState extends State<ReportListScreen> {
     );
   }
 
+  String _firestoreStatusForFilter(String filter) {
+    if (filter == 'Under Verification') {
+      return 'Completion Submitted';
+    }
+
+    return filter;
+  }
+
+  String _displayStatus(String status) {
+    if (status == 'Completion Submitted') {
+      return 'Under Verification';
+    }
+
+    return status;
+  }
+
   Color _statusColor(String status) {
     switch (status) {
       case 'Pending':
@@ -105,6 +122,9 @@ class _ReportListScreenState extends State<ReportListScreen> {
         return Colors.deepPurple;
       case 'In Progress':
         return Colors.blue;
+      case 'Completion Submitted':
+      case 'Under Verification':
+        return Colors.amber.shade800;
       case 'Resolved':
         return Colors.green;
       case 'Rejected':
@@ -169,10 +189,13 @@ class _ReportListScreenState extends State<ReportListScreen> {
 
           final allReports = snapshot.data ?? [];
 
+          final selectedFirestoreStatus =
+              _firestoreStatusForFilter(_selectedStatusFilter);
+
           final reports = _selectedStatusFilter == 'All'
               ? allReports
               : allReports
-                    .where((r) => r.status == _selectedStatusFilter)
+                    .where((r) => r.status == selectedFirestoreStatus)
                     .toList();
 
           return Column(
@@ -193,9 +216,14 @@ class _ReportListScreenState extends State<ReportListScreen> {
                         ? Colors.green
                         : _statusColor(filter);
 
+                    final firestoreStatus =
+                        _firestoreStatusForFilter(filter);
+
                     final count = filter == 'All'
                         ? allReports.length
-                        : allReports.where((r) => r.status == filter).length;
+                        : allReports
+                            .where((r) => r.status == firestoreStatus)
+                            .length;
 
                     return Padding(
                       padding: const EdgeInsets.only(
@@ -313,7 +341,8 @@ class _ReportListScreenState extends State<ReportListScreen> {
   }
 
   Widget _buildReportCard(BuildContext context, WasteReport report) {
-    final statusColor = _statusColor(report.status);
+    final displayStatus = _displayStatus(report.status);
+    final statusColor = _statusColor(displayStatus);
 
     return Container(
       decoration: BoxDecoration(
@@ -432,7 +461,7 @@ class _ReportListScreenState extends State<ReportListScreen> {
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
-                            report.status,
+                            displayStatus,
                             style: TextStyle(
                               color: statusColor,
                               fontWeight: FontWeight.bold,
