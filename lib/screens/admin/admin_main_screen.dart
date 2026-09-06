@@ -11,8 +11,7 @@ class AdminMainScreen extends StatefulWidget {
   const AdminMainScreen({super.key});
 
   @override
-  State<AdminMainScreen> createState() =>
-      _AdminMainScreenState();
+  State<AdminMainScreen> createState() => _AdminMainScreenState();
 }
 
 class _AdminMainScreenState extends State<AdminMainScreen> {
@@ -23,8 +22,7 @@ class _AdminMainScreenState extends State<AdminMainScreen> {
 
   bool _isUpdatingLocationMetadata = false;
 
-  final GlobalKey<CurvedNavigationBarState>
-      _bottomNavigationKey =
+  final GlobalKey<CurvedNavigationBarState> _bottomNavigationKey =
       GlobalKey<CurvedNavigationBarState>();
 
   // ============================================================
@@ -90,6 +88,11 @@ class _AdminMainScreenState extends State<AdminMainScreen> {
   // ============================================================
   // LOCATION METADATA
   // ============================================================
+  //
+  // Kept for development use.
+  // The visible dashboard button is hidden temporarily for demos.
+  //
+  // ============================================================
 
   Future<void> _updateLocationMetadata() async {
     if (_isUpdatingLocationMetadata) {
@@ -100,9 +103,7 @@ class _AdminMainScreenState extends State<AdminMainScreen> {
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: const Text(
-            'Update Location Metadata?',
-          ),
+          title: const Text('Update Location Metadata?'),
           content: const Text(
             'This will update collection-area aliases, landmarks, '
             'and street patterns in Firestore.\n\n'
@@ -111,25 +112,15 @@ class _AdminMainScreenState extends State<AdminMainScreen> {
           actions: [
             TextButton(
               onPressed: () {
-                Navigator.pop(
-                  context,
-                  false,
-                );
+                Navigator.pop(context, false);
               },
-              child: const Text(
-                'Cancel',
-              ),
+              child: const Text('Cancel'),
             ),
             FilledButton(
               onPressed: () {
-                Navigator.pop(
-                  context,
-                  true,
-                );
+                Navigator.pop(context, true);
               },
-              child: const Text(
-                'Update',
-              ),
+              child: const Text('Update'),
             ),
           ],
         );
@@ -165,9 +156,7 @@ class _AdminMainScreenState extends State<AdminMainScreen> {
           content: Text(
             'Failed to update location metadata:\n$e',
           ),
-          duration: const Duration(
-            seconds: 8,
-          ),
+          duration: const Duration(seconds: 8),
         ),
       );
     } finally {
@@ -199,26 +188,18 @@ class _AdminMainScreenState extends State<AdminMainScreen> {
   @override
   Widget build(BuildContext context) {
     final List<Widget> pages = [
-      // 0 - Dashboard
       AdminDashboardScreen(
         onNavigateToReports: _navigateToReports,
-        onNavigateToReportsByArea:
-            _navigateToReportsByArea,
+        onNavigateToReportsByArea: _navigateToReportsByArea,
         onNavigateToMap: _navigateToMap,
       ),
-
-      // 1 - Public waste reports
       AdminReportListScreen(
         initialFilter: _reportFilter,
         initialAreaFilter: _areaFilter,
       ),
-
-      // 2 - Report map
       const MapPage(
         showAllReports: true,
       ),
-
-      // 3 - Collector applications
       const AdminCollectorApplicationScreen(),
     ];
 
@@ -227,7 +208,6 @@ class _AdminMainScreenState extends State<AdminMainScreen> {
       child: Scaffold(
         extendBody: true,
         backgroundColor: const Color(0xFFEFF6FF),
-
         body: SafeArea(
           bottom: false,
           child: IndexedStack(
@@ -236,38 +216,8 @@ class _AdminMainScreenState extends State<AdminMainScreen> {
           ),
         ),
 
-        // Keep the existing development-only location updater.
-        floatingActionButton: _index == 0
-            ? Padding(
-                padding: const EdgeInsets.only(
-                  bottom: 75,
-                ),
-                child: FloatingActionButton.extended(
-                  onPressed: _isUpdatingLocationMetadata
-                      ? null
-                      : _updateLocationMetadata,
-                  backgroundColor: Colors.orange.shade700,
-                  foregroundColor: Colors.white,
-                  icon: _isUpdatingLocationMetadata
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Icon(
-                          Icons.sync_rounded,
-                        ),
-                  label: Text(
-                    _isUpdatingLocationMetadata
-                        ? 'Updating...'
-                        : 'Update Location Data',
-                  ),
-                ),
-              )
-            : null,
+        // Temporarily hidden for supervisor/demo presentation.
+        floatingActionButton: null,
 
         bottomNavigationBar: CurvedNavigationBar(
           key: _bottomNavigationKey,
@@ -277,9 +227,7 @@ class _AdminMainScreenState extends State<AdminMainScreen> {
           color: Colors.blue,
           buttonBackgroundColor: Colors.blue,
           animationCurve: Curves.easeInOut,
-          animationDuration: const Duration(
-            milliseconds: 300,
-          ),
+          animationDuration: const Duration(milliseconds: 300),
           onTap: _onItemTapped,
           items: const <Widget>[
             Icon(

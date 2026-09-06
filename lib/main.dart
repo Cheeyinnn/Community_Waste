@@ -1,5 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
 
 import 'firebase_options.dart';
 
@@ -10,12 +12,64 @@ import 'screens/collector/collector_main_screen.dart';
 
 import 'services/auth_service.dart';
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  // ============================================================
+  // FIREBASE APP CHECK - DEVELOPMENT
+  // ============================================================
+  //
+  // For local Android testing we use the debug provider.
+  // The debug secret printed by Android logcat must already be
+  // registered in Firebase Console -> App Check -> Manage debug tokens.
+  //
+  // IMPORTANT:
+  // Use Play Integrity for a production/release build later.
+  //
+  // ============================================================
+
+  await FirebaseAppCheck.instance.activate(
+    androidProvider: AndroidProvider.debug,
+    appleProvider: AppleProvider.debug,
+  );
+
+  // ============================================================
+  // APP CHECK DIAGNOSTIC
+  // ============================================================
+  //
+  // Force one fresh App Check token request before the app starts.
+  // We NEVER print the token itself.
+  //
+  // Expected successful log:
+  // APP_CHECK_DIAGNOSTIC: token received successfully
+  //
+  // If this prints an error/403, the problem is still App Check
+  // registration rather than Gemini code.
+  //
+  // ============================================================
+
+  try {
+    final token = await FirebaseAppCheck.instance.getToken(true);
+
+    if (token != null && token.isNotEmpty) {
+      debugPrint(
+        'APP_CHECK_DIAGNOSTIC: token received successfully '
+        '(length=${token.length})',
+      );
+    } else {
+      debugPrint(
+        'APP_CHECK_DIAGNOSTIC: no App Check token was returned',
+      );
+    }
+  } catch (e) {
+    debugPrint(
+      'APP_CHECK_DIAGNOSTIC_ERROR: $e',
+    );
+  }
 
   runApp(const MyApp());
 }

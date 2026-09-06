@@ -53,7 +53,10 @@ class _NotificationPageState extends State<NotificationPage> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => ReportDetailScreen(report: report, isAdmin: false),
+        builder: (_) => ReportDetailScreen(
+          report: report,
+          isAdmin: false,
+        ),
       ),
     );
   }
@@ -61,6 +64,14 @@ class _NotificationPageState extends State<NotificationPage> {
   Future<bool> _onWillPop() async {
     _goBackToHome();
     return false;
+  }
+
+  String _displayStatus(String status) {
+    if (status == 'Completion Submitted') {
+      return 'Under Verification';
+    }
+
+    return status;
   }
 
   @override
@@ -77,8 +88,11 @@ class _NotificationPageState extends State<NotificationPage> {
             onPressed: _goBackToHome,
           ),
           title: const Text(
-            "Notifications",
-            style: TextStyle(fontWeight: FontWeight.w700, fontSize: 22),
+            'Notifications',
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              fontSize: 22,
+            ),
           ),
           backgroundColor: Colors.transparent,
           elevation: 0,
@@ -86,13 +100,18 @@ class _NotificationPageState extends State<NotificationPage> {
           foregroundColor: Colors.black87,
         ),
         body: user == null
-            ? const Center(child: Text("Please log in to see updates"))
+            ? const Center(
+                child: Text('Please log in to see updates'),
+              )
             : StreamBuilder<List<WasteReport>>(
                 stream: firestoreService.getUserReports(user.uid),
                 builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
+                  if (snapshot.connectionState ==
+                      ConnectionState.waiting) {
                     return const Center(
-                      child: CircularProgressIndicator(color: Colors.green),
+                      child: CircularProgressIndicator(
+                        color: Colors.green,
+                      ),
                     );
                   }
 
@@ -109,18 +128,25 @@ class _NotificationPageState extends State<NotificationPage> {
 
                   final updates =
                       reports.where((r) => r.status != 'Pending').toList()
-                        ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+                        ..sort(
+                          (a, b) =>
+                              b.updatedAt.compareTo(a.updatedAt),
+                        );
 
                   if (updates.isEmpty) {
                     return _buildEmptyState();
                   }
 
                   return ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(20, 10, 20, 100),
+                    padding:
+                        const EdgeInsets.fromLTRB(20, 10, 20, 100),
                     physics: const ClampingScrollPhysics(),
                     itemCount: updates.length,
                     itemBuilder: (context, index) {
-                      return _buildNotificationCard(context, updates[index]);
+                      return _buildNotificationCard(
+                        context,
+                        updates[index],
+                      );
                     },
                   );
                 },
@@ -129,46 +155,67 @@ class _NotificationPageState extends State<NotificationPage> {
     );
   }
 
-  Widget _buildNotificationCard(BuildContext context, WasteReport report) {
-    String message = "";
+  Widget _buildNotificationCard(
+    BuildContext context,
+    WasteReport report,
+  ) {
+    String message = '';
     IconData iconData = Icons.notifications_active_rounded;
     Color themeColor = Colors.blue;
 
     switch (report.status) {
       case 'Assigned':
-        message = "A collector has been assigned to your report.";
+        message = 'A collector has been assigned to your report.';
         iconData = Icons.person_search_rounded;
         themeColor = Colors.deepPurple;
         break;
+
       case 'In Progress':
-        message = "A collector is currently handling your report.";
+        message = 'A collector is currently handling your report.';
         iconData = Icons.local_shipping_rounded;
         themeColor = Colors.blue;
         break;
+
+      case 'Completion Submitted':
+        message =
+            'The collector has submitted completion evidence. '
+            'It is waiting for Admin verification.';
+        iconData = Icons.fact_check_outlined;
+        themeColor = Colors.amber.shade800;
+        break;
+
       case 'Resolved':
-        message = "Great news! Your waste report has been resolved.";
-        iconData = Icons.check_circle_rounded;
+        message =
+            'Great news! Your completion evidence was approved '
+            'and the report has been resolved.';
+        iconData = Icons.verified_rounded;
         themeColor = Colors.green;
         break;
+
       case 'Rejected':
-        message = "Your report was rejected. Check details for remarks.";
+        message =
+            'Your report was rejected. Check the report details '
+            'for the Admin remark.';
         iconData = Icons.cancel_rounded;
         themeColor = Colors.red;
         break;
+
       default:
-        message = "There is an update on your report.";
+        message = 'There is an update on your report.';
         break;
     }
 
-    String dateString = "-";
+    String dateString = '-';
 
     try {
       dateString = DateFormat(
         'MMM d, h:mm a',
       ).format(report.updatedAt.toDate());
     } catch (e) {
-      dateString = "-";
+      dateString = '-';
     }
+
+    final displayStatus = _displayStatus(report.status);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -200,24 +247,33 @@ class _NotificationPageState extends State<NotificationPage> {
                       color: themeColor.withOpacity(0.1),
                       shape: BoxShape.circle,
                     ),
-                    child: Icon(iconData, color: themeColor, size: 24),
+                    child: Icon(
+                      iconData,
+                      color: themeColor,
+                      size: 24,
+                    ),
                   ),
                   const SizedBox(width: 16),
                   Expanded(
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                      crossAxisAlignment:
+                          CrossAxisAlignment.start,
                       children: [
                         Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          mainAxisAlignment:
+                              MainAxisAlignment.spaceBetween,
                           children: [
-                            Text(
-                              report.status,
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold,
-                                color: themeColor,
+                            Flexible(
+                              child: Text(
+                                displayStatus,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  color: themeColor,
+                                ),
                               ),
                             ),
+                            const SizedBox(width: 8),
                             Text(
                               dateString,
                               style: TextStyle(
@@ -269,7 +325,7 @@ class _NotificationPageState extends State<NotificationPage> {
           ),
           const SizedBox(height: 16),
           const Text(
-            "All quiet here",
+            'All quiet here',
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.bold,
@@ -280,7 +336,9 @@ class _NotificationPageState extends State<NotificationPage> {
           Text(
             "You'll get notified when your\nreports are updated.",
             textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.grey.shade500),
+            style: TextStyle(
+              color: Colors.grey.shade500,
+            ),
           ),
         ],
       ),

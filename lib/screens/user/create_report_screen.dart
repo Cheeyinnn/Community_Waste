@@ -12,6 +12,7 @@ import 'package:geocoding/geocoding.dart';
 import '../../models/waste_report.dart';
 import '../../services/firestore_service.dart';
 import '../../services/storage_service.dart';
+import '../../services/waste_ai_service.dart';
 
 class CreateReportScreen extends StatefulWidget {
   const CreateReportScreen({super.key});
@@ -30,6 +31,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
 
   final FirestoreService _firestoreService = FirestoreService();
   final StorageService _storageService = StorageService();
+  final WasteAiService _wasteAiService = WasteAiService();
 
   // Keep your current working Google API key here.
   static const String _googleApiKey = 'AIzaSyBHoNEbIfc0lqJ74D70b26P8_vxL5DSw9s';
@@ -40,6 +42,9 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
 
   bool _isLoading = false;
   bool _isGettingLocation = false;
+  bool _isAnalyzingImage = false;
+
+  WasteAiSuggestion? _aiSuggestion;
 
   double _latitude = 0.0;
   double _longitude = 0.0;
@@ -236,7 +241,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
             'place_id': placeId,
             'key': _googleApiKey,
             'language': 'en',
-            'fields': 'formatted_address,geometry',
+            'fields': 'formatted_address,geometry,address_components',
           });
 
       final request = await HttpClient().getUrl(url);
@@ -286,7 +291,15 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
         _isSearchingPlaces = false;
       });
 
-      await _setAreaFromCoordinates(lat, lng);
+      // Prefer Google's address components because they are more reliable
+      // around UTAR / Bandar Barat than the device reverse-geocoder alone.
+      _applyGoogleLocationMetadata(result);
+
+      // Fall back to the geocoding package only when Google did not provide
+      // enough area/state information. Existing Google metadata is preserved.
+      if (_detectedArea.trim().isEmpty || _detectedState.trim().isEmpty) {
+        await _setAreaFromCoordinates(lat, lng);
+      }
     } catch (e) {
       if (!mounted) return;
 
@@ -375,6 +388,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
       if (picked != null) {
         setState(() {
           _imageFile = File(picked.path);
+          _aiSuggestion = null;
         });
       }
     } catch (e) {
@@ -421,6 +435,289 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
             const SizedBox(height: 10),
           ],
         ),
+      ),
+    );
+  }
+
+  // ============================================================
+  // GEMINI AI WASTE TYPE SUGGESTION
+  // ============================================================
+
+  Future<void> _analyzeWasteImage() async {
+    if (_imageFile == null || _isAnalyzingImage || _isLoading) {
+      return;
+    }
+
+    setState(() {
+      _isAnalyzingImage = true;
+      _aiSuggestion = null;
+    });
+
+    try {
+      final suggestion =
+          await _wasteAiService.suggestWasteType(_imageFile!);
+
+      if (!mounted) return;
+
+      setState(() {
+        _aiSuggestion = suggestion;
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('AI suggestion failed: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isAnalyzingImage = false;
+        });
+      }
+    }
+  }
+
+  void _useAiSuggestion() {
+    final category = _aiSuggestion?.category;
+
+    if (category == null || !_wasteTypes.contains(category)) {
+      return;
+    }
+
+    setState(() {
+      _wasteType = category;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Waste type changed to $category'),
+        backgroundColor: Colors.green,
+      ),
+    );
+  }
+
+  Widget _buildAiSuggestionCard() {
+    final suggestion = _aiSuggestion;
+
+    if (_imageFile == null) {
+      return const SizedBox.shrink();
+    }
+
+    if (_isAnalyzingImage) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.deepPurple.shade50,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: Colors.deepPurple.shade100,
+          ),
+        ),
+        child: Row(
+          children: [
+            const SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.4,
+                color: Colors.deepPurple,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Gemini is analyzing the waste image...',
+                style: TextStyle(
+                  color: Colors.deepPurple.shade800,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (suggestion == null) {
+      return SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          onPressed: _isLoading ? null : _analyzeWasteImage,
+          icon: const Icon(Icons.auto_awesome_rounded),
+          label: const Text('AI Suggest Waste Type'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: Colors.deepPurple,
+            side: BorderSide(
+              color: Colors.deepPurple.shade200,
+            ),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 13,
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final hasCategory = suggestion.category != null;
+
+    final Color accentColor = hasCategory
+        ? Colors.deepPurple
+        : suggestion.isUnclear
+            ? Colors.orange
+            : Colors.red;
+
+    final Color boxColor = hasCategory
+        ? Colors.deepPurple.shade50
+        : suggestion.isUnclear
+            ? Colors.orange.shade50
+            : Colors.red.shade50;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: boxColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: accentColor.withOpacity(0.20),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                hasCategory
+                    ? Icons.auto_awesome_rounded
+                    : suggestion.isUnclear
+                        ? Icons.help_outline_rounded
+                        : Icons.warning_amber_rounded,
+                color: accentColor,
+                size: 22,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      hasCategory
+                          ? 'Gemini AI Suggestion'
+                          : suggestion.isUnclear
+                              ? 'AI Could Not Decide'
+                              : 'Image May Not Show Waste',
+                      style: TextStyle(
+                        color: accentColor,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      suggestion.message,
+                      style: TextStyle(
+                        color: accentColor,
+                        fontSize: 12.5,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (hasCategory) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: _isLoading
+                        ? null
+                        : () {
+                            setState(() {
+                              _aiSuggestion = null;
+                            });
+
+                            _analyzeWasteImage();
+                          },
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: accentColor,
+                      side: BorderSide(
+                        color: accentColor.withOpacity(0.35),
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text('Analyze Again'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: _isLoading ? null : _useAiSuggestion,
+                    icon: const Icon(
+                      Icons.check_rounded,
+                      size: 18,
+                    ),
+                    label: const Text('Use Suggestion'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: accentColor,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ] else ...[
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: _isLoading
+                    ? null
+                    : () {
+                        setState(() {
+                          _aiSuggestion = null;
+                        });
+
+                        _analyzeWasteImage();
+                      },
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('Try Again'),
+                style: TextButton.styleFrom(
+                  foregroundColor: accentColor,
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(height: 4),
+          Text(
+            'AI only provides a suggestion. You can still choose any waste '
+            'type manually.',
+            style: TextStyle(
+              color: Colors.grey.shade600,
+              fontSize: 11.5,
+              height: 1.3,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -478,16 +775,102 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     return uniqueParts.join(', ');
   }
 
+  String _googleAddressComponent(
+    Map<String, dynamic> result,
+    String wantedType, {
+    bool shortName = false,
+  }) {
+    final components =
+        (result['address_components'] as List<dynamic>? ?? const []);
+
+    for (final item in components) {
+      if (item is! Map<String, dynamic>) continue;
+
+      final types = (item['types'] as List<dynamic>? ?? const [])
+          .map((type) => type.toString())
+          .toList();
+
+      if (types.contains(wantedType)) {
+        final key = shortName ? 'short_name' : 'long_name';
+        return item[key]?.toString().trim() ?? '';
+      }
+    }
+
+    return '';
+  }
+
+  String _buildGoogleAreaKey(Map<String, dynamic> result) {
+    final route = _googleAddressComponent(result, 'route');
+    final sublocality =
+        _googleAddressComponent(result, 'sublocality_level_1');
+    final locality = _googleAddressComponent(result, 'locality');
+    final district =
+        _googleAddressComponent(result, 'administrative_area_level_2');
+    final state =
+        _googleAddressComponent(result, 'administrative_area_level_1');
+
+    final parts = <String>[
+      route,
+      sublocality,
+      locality,
+      district,
+      state,
+    ];
+
+    final uniqueParts = <String>[];
+
+    for (final rawPart in parts) {
+      final part = rawPart.trim();
+
+      if (part.isEmpty) continue;
+
+      final alreadyExists = uniqueParts.any(
+        (existing) => existing.toLowerCase() == part.toLowerCase(),
+      );
+
+      if (!alreadyExists) {
+        uniqueParts.add(part);
+      }
+    }
+
+    return uniqueParts.join(', ');
+  }
+
+  void _applyGoogleLocationMetadata(Map<String, dynamic> result) {
+    final googleArea = _buildGoogleAreaKey(result);
+    final googleState =
+        _googleAddressComponent(result, 'administrative_area_level_1');
+
+    if (!mounted) return;
+
+    setState(() {
+      if (googleArea.isNotEmpty) {
+        _detectedArea = googleArea;
+      }
+
+      if (googleState.isNotEmpty) {
+        _detectedState = googleState;
+      }
+    });
+  }
+
   // ============================================================
   // STATE AND LOCATION VALIDATION
   // ============================================================
 
   bool _isLocationInPerak() {
-    return _detectedState.toLowerCase().contains('perak');
+    final stateText = _detectedState.toLowerCase();
+    final verifiedAddress = _verifiedLocationText.toLowerCase();
+
+    // Prefer structured state metadata, but also accept the verified Google
+    // address text as a fallback. This prevents valid places such as UTAR FICT
+    // from being blocked when the device reverse-geocoder returns an empty or
+    // inconsistent administrativeArea.
+    return stateText.contains('perak') || verifiedAddress.contains('perak');
   }
 
   bool _isOutsidePerak() {
-    return _detectedState.trim().isNotEmpty && !_isLocationInPerak();
+    return _isLocationVerified() && !_isLocationInPerak();
   }
 
   bool _isLocationVerified() {
@@ -498,8 +881,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     return _verifiedLocationText.trim().isNotEmpty &&
         _locationController.text.trim() == _verifiedLocationText.trim() &&
         _latitude != 0.0 &&
-        _longitude != 0.0 &&
-        _detectedState.trim().isNotEmpty;
+        _longitude != 0.0;
   }
 
   bool _canSubmitLocation() {
@@ -510,35 +892,33 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     try {
       final placemarks = await placemarkFromCoordinates(lat, lng);
 
-      if (placemarks.isEmpty) {
-        setState(() {
-          _detectedArea = '';
-          _detectedState = '';
-        });
-
+      if (placemarks.isEmpty || !mounted) {
         return;
       }
 
       final place = placemarks.first;
       final areaKey = _buildAreaKey(place);
+      final fallbackArea = areaKey.isNotEmpty
+          ? areaKey
+          : '${place.locality ?? ''}, ${place.administrativeArea ?? ''}'
+                .replaceAll(RegExp(r'^,\s*|,\s*$'), '')
+                .trim();
+      final fallbackState = (place.administrativeArea ?? '').trim();
 
       setState(() {
-        _detectedArea = areaKey.isNotEmpty
-            ? areaKey
-            : '${place.locality ?? ''}, ${place.administrativeArea ?? ''}'
-                  .replaceAll(RegExp(r'^,\s*|,\s*$'), '')
-                  .trim();
+        // Do not erase valid metadata already obtained from Google.
+        if (_detectedArea.trim().isEmpty && fallbackArea.isNotEmpty) {
+          _detectedArea = fallbackArea;
+        }
 
-        // administrativeArea is normally the Malaysian state.
-        _detectedState = (place.administrativeArea ?? '').trim();
+        if (_detectedState.trim().isEmpty && fallbackState.isNotEmpty) {
+          _detectedState = fallbackState;
+        }
       });
     } catch (e) {
-      if (!mounted) return;
-
-      setState(() {
-        _detectedArea = '';
-        _detectedState = '';
-      });
+      // Keep any Google metadata already obtained. A failure from the device
+      // geocoder should not invalidate an otherwise verified Google location.
+      debugPrint('Reverse geocoding fallback failed: $e');
     }
   }
 
@@ -596,12 +976,21 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
       final data = jsonDecode(responseBody);
 
       String detectedAddress = '';
+      Map<String, dynamic>? googleResult;
 
       if (data['status'] == 'OK' &&
           data['results'] != null &&
           data['results'].isNotEmpty) {
-        detectedAddress = data['results'][0]['formatted_address'] as String;
-      } else {
+        googleResult =
+            Map<String, dynamic>.from(data['results'][0] as Map);
+
+        detectedAddress =
+            googleResult['formatted_address']?.toString().trim() ?? '';
+
+        _applyGoogleLocationMetadata(googleResult);
+      }
+
+      if (detectedAddress.isEmpty) {
         final placemarks = await placemarkFromCoordinates(lat, lng);
 
         if (placemarks.isNotEmpty) {
@@ -628,7 +1017,10 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
 
       _setLocationText(detectedAddress);
 
-      await _setAreaFromCoordinates(lat, lng);
+      // Use the device geocoder only as a fallback for missing metadata.
+      if (_detectedArea.trim().isEmpty || _detectedState.trim().isEmpty) {
+        await _setAreaFromCoordinates(lat, lng);
+      }
     } catch (e) {
       if (!mounted) return;
 
@@ -870,6 +1262,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
 
       setState(() {
         _imageFile = null;
+        _aiSuggestion = null;
         _wasteType = 'General Waste';
         _latitude = 0.0;
         _longitude = 0.0;
@@ -1166,6 +1559,11 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                             ),
                     ),
                   ),
+
+                  if (_imageFile != null) ...[
+                    const SizedBox(height: 14),
+                    _buildAiSuggestionCard(),
+                  ],
 
                   const SizedBox(height: 30),
 
