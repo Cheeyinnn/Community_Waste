@@ -1520,8 +1520,10 @@ class _CollectorCollectionScreenState
             'Mark as Collected',
           ),
           style: ElevatedButton.styleFrom(
+            // Amber indicates an action that will complete the run.
+            // Green is reserved for the final Collected state.
             backgroundColor:
-                Colors.green,
+                Colors.amber.shade700,
             foregroundColor:
                 Colors.white,
             elevation: 0,

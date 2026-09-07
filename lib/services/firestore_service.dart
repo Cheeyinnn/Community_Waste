@@ -310,14 +310,85 @@ class FirestoreService {
   // COLLECTOR REPORT TASK WORKFLOW
   // ============================================================
 
+  Future<String> _requireCollectorUid() async {
+    final user = _auth.currentUser;
+
+    if (user == null) {
+      throw Exception('Collector must be logged in.');
+    }
+
+    final userDoc = await _usersRef.doc(user.uid).get();
+
+    if (!userDoc.exists) {
+      throw Exception('Collector account was not found.');
+    }
+
+    final role =
+        userDoc.data()?['role']?.toString().trim().toLowerCase() ?? '';
+
+    if (role != 'collector') {
+      throw Exception(
+        'Only an approved Collector account can update collector tasks.',
+      );
+    }
+
+    return user.uid;
+  }
+
   Future<void> startCollectorTask({
     required String reportId,
     String collectorRemark = '',
   }) async {
-    await _reportsRef.doc(reportId).update({
-      'status': 'In Progress',
-      'collectorRemark': collectorRemark,
-      'updatedAt': Timestamp.now(),
+    final collectorUid = await _requireCollectorUid();
+
+    final reportRef = _reportsRef.doc(reportId);
+
+    await _firestore.runTransaction((transaction) async {
+      final reportDoc = await transaction.get(reportRef);
+
+      if (!reportDoc.exists) {
+        throw Exception('Report not found.');
+      }
+
+      final data = reportDoc.data() ?? <String, dynamic>{};
+
+      final assignedCollectorId =
+          data['collectorId']?.toString().trim() ?? '';
+
+      final status =
+          data['status']?.toString().trim() ?? '';
+
+      if (assignedCollectorId != collectorUid) {
+        throw Exception(
+          'This report is not assigned to the current collector.',
+        );
+      }
+
+      if (status == 'Completion Submitted') {
+        throw Exception(
+          'This task is waiting for Admin completion review.',
+        );
+      }
+
+      if (status == 'Resolved') {
+        throw Exception('This report has already been resolved.');
+      }
+
+      if (status == 'Rejected') {
+        throw Exception('This report has been rejected by Admin.');
+      }
+
+      if (status != 'Assigned' && status != 'In Progress') {
+        throw Exception(
+          'Only an Assigned task can be started.',
+        );
+      }
+
+      transaction.update(reportRef, {
+        'status': 'In Progress',
+        'collectorRemark': collectorRemark.trim(),
+        'updatedAt': Timestamp.now(),
+      });
     });
   }
 
@@ -331,11 +402,7 @@ class FirestoreService {
     required String collectorRemark,
     required String completionImageUrl,
   }) async {
-    final user = _auth.currentUser;
-
-    if (user == null) {
-      throw Exception('Collector must be logged in.');
-    }
+    final collectorUid = await _requireCollectorUid();
 
     final cleanImageUrl = completionImageUrl.trim();
 
@@ -360,7 +427,7 @@ class FirestoreService {
       final status =
           data['status']?.toString().trim() ?? '';
 
-      if (collectorId != user.uid) {
+      if (collectorId != collectorUid) {
         throw Exception(
           'This report is not assigned to the current collector.',
         );
@@ -555,7 +622,15 @@ class FirestoreService {
     String? photoUrl,
   ) async {
     final Map<String, dynamic> data = {
+      // Keep "name" as the primary Firestore name field because
+      // registration, collector assignment, and other parts of
+      // the application already read from it.
+      'name': displayName,
+
+      // Keep displayName as well for compatibility with any
+      // existing screens or older records that use this field.
       'displayName': displayName,
+
       'updatedAt': Timestamp.now(),
     };
 
@@ -563,6 +638,9 @@ class FirestoreService {
       data['photoUrl'] = photoUrl;
     }
 
-    await _usersRef.doc(uid).set(data, SetOptions(merge: true));
+    await _usersRef.doc(uid).set(
+      data,
+      SetOptions(merge: true),
+    );
   }
 }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -30,6 +32,24 @@ class _HomeScreenState extends State<HomeScreen>
   final FirestoreService firestoreService = FirestoreService();
   final ScrollController _scrollController = ScrollController();
 
+  StreamSubscription<User?>? _userSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+
+    // HomeScreen is kept alive inside UserMain's IndexedStack.
+    // Listen to Firebase Auth profile changes so an updated
+    // display name or profile photo appears immediately without
+    // requiring logout/login or an app restart.
+    _userSubscription =
+        FirebaseAuth.instance.userChanges().listen((_) {
+      if (mounted) {
+        setState(() {});
+      }
+    });
+  }
+
   @override
   bool get wantKeepAlive => true;
 
@@ -54,6 +74,7 @@ class _HomeScreenState extends State<HomeScreen>
 
   @override
   void dispose() {
+    _userSubscription?.cancel();
     _scrollController.dispose();
     super.dispose();
   }
@@ -934,6 +955,11 @@ class _HomeScreenState extends State<HomeScreen>
   Widget _buildReportTile(WasteReport report) {
     final Color statusColor = _getStatusColor(report.status);
 
+    final String displayStatus =
+        report.status == 'Completion Submitted'
+            ? 'Under Verification'
+            : report.status;
+
     return Container(
       padding: const EdgeInsets.all(15),
       decoration: BoxDecoration(
@@ -980,7 +1006,7 @@ class _HomeScreenState extends State<HomeScreen>
               borderRadius: BorderRadius.circular(12),
             ),
             child: Text(
-              report.status,
+              displayStatus,
               style: TextStyle(
                 color: statusColor,
                 fontWeight: FontWeight.w700,
@@ -1017,6 +1043,8 @@ class _HomeScreenState extends State<HomeScreen>
         return Colors.deepPurple;
       case 'In Progress':
         return Colors.blue;
+      case 'Completion Submitted':
+        return Colors.amber.shade800;
       case 'Resolved':
         return Colors.green;
       case 'Rejected':

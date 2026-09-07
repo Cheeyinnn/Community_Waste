@@ -1,8 +1,9 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../services/firestore_service.dart';
+import '../../services/storage_service.dart';
 import '../user/edit_profile_screen.dart';
 import 'login_screen.dart';
 
@@ -15,6 +16,8 @@ class ProfilePage extends StatefulWidget {
 
 class _ProfilePageState extends State<ProfilePage> {
   final Stream<User?> _userStream = FirebaseAuth.instance.userChanges();
+  final StorageService _storageService = StorageService();
+  final FirestoreService _firestoreService = FirestoreService();
   bool _isUploadingImage = false;
 
   // --- LOGIC: Image Picking & Uploading ---
@@ -34,20 +37,39 @@ class _ProfilePageState extends State<ProfilePage> {
       setState(() => _isUploadingImage = true);
 
       final File file = File(pickedFile.path);
-      final storageRef = FirebaseStorage.instance
-          .ref()
-          .child('profile_pictures')
-          .child('${user.uid}.jpg');
 
-      await storageRef.putFile(file);
-      final String downloadUrl = await storageRef.getDownloadURL();
+      // Use the shared StorageService so every profile image uses
+      // the same Firebase Storage location:
+      // profile_pictures/<uid>/profile_image
+      final String downloadUrl = await _storageService.uploadProfileImage(
+        user.uid,
+        file,
+      );
 
+      // Keep Firebase Authentication profile information synchronized.
       await user.updatePhotoURL(downloadUrl);
+
+      // Keep Firestore synchronized as well. The updated profile service
+      // stores both "name" and "displayName" consistently.
+      final String currentName =
+          user.displayName?.trim().isNotEmpty == true
+              ? user.displayName!.trim()
+              : 'Community Member';
+
+      await _firestoreService.updateUserProfile(
+        user.uid,
+        currentName,
+        downloadUrl,
+      );
+
       await user.reload();
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Profile picture updated successfully.")),
+        const SnackBar(
+          content: Text("Profile picture updated successfully."),
+          backgroundColor: Colors.green,
+        ),
       );
     } catch (e) {
       if (!mounted) return;

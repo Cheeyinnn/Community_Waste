@@ -1,8 +1,6 @@
 import 'dart:io';
 
 import 'package:firebase_ai/firebase_ai.dart';
-import 'package:firebase_app_check/firebase_app_check.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 
 class WasteAiSuggestion {
   final String? category;
@@ -19,23 +17,39 @@ class WasteAiSuggestion {
 }
 
 class WasteAiService {
-  late final GenerativeModel _model;
+  late final Future<GenerativeModel> _modelFuture;
 
   WasteAiService() {
-    // IMPORTANT FOR firebase_ai 2.3.0:
-    // Older firebase_ai versions do not automatically use the
-    // Firebase App Check instance for AI Logic requests.
-    //
-    // We therefore pass both App Check and Firebase Auth explicitly.
-    final ai = FirebaseAI.googleAI(
-      appCheck: FirebaseAppCheck.instance,
-      auth: FirebaseAuth.instance,
+    _modelFuture = _createModel();
+  }
+
+  // ============================================================
+  // GEMINI MODEL INITIALIZATION
+  // ============================================================
+  //
+  // The application now uses the Agent Platform Gemini API
+  // instead of the Gemini Developer API.
+  //
+  // The Agent Platform backend is connected to the Firebase
+  // project's Google Cloud billing account.
+  //
+  // Firebase App Check remains enabled globally in main.dart.
+  //
+  // ============================================================
+
+  Future<GenerativeModel> _createModel() async {
+    final ai = await FirebaseAI.agentPlatform(
+      location: 'global',
     );
 
-    _model = ai.generativeModel(
+    return ai.generativeModel(
       model: 'gemini-3.7-flash',
     );
   }
+
+  // ============================================================
+  // SUPPORTED WASTE CATEGORIES
+  // ============================================================
 
   static const Map<String, String> _categoryMap = {
     'GENERAL_WASTE': 'General Waste',
@@ -45,14 +59,28 @@ class WasteAiService {
     'HAZARDOUS_WASTE': 'Hazardous Waste',
   };
 
-  Future<WasteAiSuggestion> suggestWasteType(File imageFile) async {
+  // ============================================================
+  // ANALYSE WASTE IMAGE
+  // ============================================================
+
+  Future<WasteAiSuggestion> suggestWasteType(
+    File imageFile,
+  ) async {
     final bytes = await imageFile.readAsBytes();
 
     if (bytes.isEmpty) {
-      throw Exception('The selected image is empty.');
+      throw Exception(
+        'The selected image is empty.',
+      );
     }
 
-    final mimeType = _mimeTypeForFile(imageFile.path);
+    final mimeType = _mimeTypeForFile(
+      imageFile.path,
+    );
+
+    // Wait until the Agent Platform Gemini model
+    // has finished initializing.
+    final model = await _modelFuture;
 
     final prompt = TextPart(
       '''
@@ -84,16 +112,20 @@ UNCLEAR
 ''',
     );
 
-    final imagePart = InlineDataPart(mimeType, bytes);
+    final imagePart = InlineDataPart(
+      mimeType,
+      bytes,
+    );
 
-    final response = await _model.generateContent([
+    final response = await model.generateContent([
       Content.multi([
         prompt,
         imagePart,
       ]),
     ]);
 
-    final rawResult = response.text?.trim().toUpperCase() ?? '';
+    final rawResult =
+        response.text?.trim().toUpperCase() ?? '';
 
     final normalized = rawResult
         .replaceAll('`', '')
@@ -101,16 +133,26 @@ UNCLEAR
         .replaceAll('.', '')
         .trim();
 
+    // ==========================================================
+    // VALID WASTE CATEGORY
+    // ==========================================================
+
     for (final entry in _categoryMap.entries) {
-      if (normalized == entry.key || normalized.contains(entry.key)) {
+      if (normalized == entry.key ||
+          normalized.contains(entry.key)) {
         return WasteAiSuggestion(
           category: entry.value,
           isWasteRelated: true,
           isUnclear: false,
-          message: 'Gemini suggests ${entry.value}.',
+          message:
+              'Gemini suggests ${entry.value}.',
         );
       }
     }
+
+    // ==========================================================
+    // IMAGE IS NOT WASTE RELATED
+    // ==========================================================
 
     if (normalized.contains('NOT_WASTE')) {
       return const WasteAiSuggestion(
@@ -123,6 +165,10 @@ UNCLEAR
       );
     }
 
+    // ==========================================================
+    // IMAGE IS UNCLEAR
+    // ==========================================================
+
     if (normalized.contains('UNCLEAR')) {
       return const WasteAiSuggestion(
         category: null,
@@ -134,10 +180,18 @@ UNCLEAR
       );
     }
 
+    // ==========================================================
+    // UNEXPECTED GEMINI RESPONSE
+    // ==========================================================
+
     throw Exception(
       'Gemini returned an unexpected category. Please try again.',
     );
   }
+
+  // ============================================================
+  // IMAGE MIME TYPE
+  // ============================================================
 
   String _mimeTypeForFile(String path) {
     final lower = path.toLowerCase();

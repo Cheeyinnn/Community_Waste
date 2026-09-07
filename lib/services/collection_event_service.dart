@@ -21,7 +21,9 @@ class CollectionEventService {
   // CURRENT COLLECTOR
   // ============================================================
 
-  User _requireCurrentUser() {
+  Future<User> _requireCollectorAccessForArea(
+    CollectionArea area,
+  ) async {
     final user = _auth.currentUser;
 
     if (user == null) {
@@ -30,7 +32,99 @@ class CollectionEventService {
       );
     }
 
+    final userDoc = await _firestore
+        .collection('users')
+        .doc(user.uid)
+        .get();
+
+    if (!userDoc.exists) {
+      throw StateError(
+        'Collector account was not found.',
+      );
+    }
+
+    final data = userDoc.data() ?? <String, dynamic>{};
+
+    final role =
+        data['role']?.toString().trim().toLowerCase() ?? '';
+
+    if (role != 'collector') {
+      throw StateError(
+        'Only an approved Collector account can update collection runs.',
+      );
+    }
+
+    final rawZoneIds = data['assignedCollectionZoneIds'];
+
+    final assignedZoneIds = rawZoneIds is Iterable
+        ? rawZoneIds
+            .map((item) => item.toString().trim())
+            .where((item) => item.isNotEmpty)
+            .toSet()
+        : <String>{};
+
+    if (area.zoneId.trim().isEmpty) {
+      throw StateError(
+        'This collection area does not have a valid collection zone.',
+      );
+    }
+
+    if (!assignedZoneIds.contains(area.zoneId.trim())) {
+      throw StateError(
+        'This collection area is not assigned to the current collector.',
+      );
+    }
+
+    if (!area.isActive) {
+      throw StateError(
+        '${area.areaName} is currently inactive.',
+      );
+    }
+
     return user;
+  }
+
+  void _validateAreaAndSchedule({
+    required CollectionArea area,
+    required CollectionSchedule schedule,
+  }) {
+    if (!schedule.isActive) {
+      throw StateError(
+        'The collection schedule for ${area.areaName} is currently inactive.',
+      );
+    }
+
+    if (area.scheduleId.trim().isEmpty ||
+        schedule.scheduleId.trim().isEmpty ||
+        area.scheduleId.trim() != schedule.scheduleId.trim()) {
+      throw StateError(
+        'The selected collection schedule does not match ${area.areaName}.',
+      );
+    }
+
+    if (area.zoneId.trim().isEmpty ||
+        schedule.zoneId.trim().isEmpty ||
+        area.zoneId.trim() != schedule.zoneId.trim()) {
+      throw StateError(
+        'The selected collection schedule does not match the collection zone.',
+      );
+    }
+  }
+
+  void _requireEventOwnership({
+    required Map<String, dynamic> data,
+    required String collectorUid,
+    required String areaName,
+  }) {
+    final eventCollectorId =
+        data['collectorId']?.toString().trim() ?? '';
+
+    if (eventCollectorId.isNotEmpty &&
+        eventCollectorId != collectorUid) {
+      throw StateError(
+        '$areaName is already assigned to another collector for today.',
+      );
+    }
   }
 
   // ============================================================
@@ -177,7 +271,12 @@ class CollectionEventService {
     required CollectionArea area,
     required CollectionSchedule schedule,
   }) async {
-    final user = _requireCurrentUser();
+    final user = await _requireCollectorAccessForArea(area);
+
+    _validateAreaAndSchedule(
+      area: area,
+      schedule: schedule,
+    );
 
     final now = DateTime.now();
 
@@ -208,6 +307,12 @@ class CollectionEventService {
       if (snapshot.exists) {
         final data =
             snapshot.data() ?? <String, dynamic>{};
+
+        _requireEventOwnership(
+          data: data,
+          collectorUid: user.uid,
+          areaName: area.areaName,
+        );
 
         final currentStatus =
             data['status']?.toString() ?? 'pending';
@@ -293,7 +398,7 @@ class CollectionEventService {
   Future<void> markAsCollected({
     required CollectionArea area,
   }) async {
-    final user = _requireCurrentUser();
+    final user = await _requireCollectorAccessForArea(area);
 
     final now = DateTime.now();
 
@@ -315,6 +420,12 @@ class CollectionEventService {
 
       final data =
           snapshot.data() ?? <String, dynamic>{};
+
+      _requireEventOwnership(
+        data: data,
+        collectorUid: user.uid,
+        areaName: area.areaName,
+      );
 
       final currentStatus =
           data['status']?.toString() ?? 'pending';
@@ -363,7 +474,12 @@ class CollectionEventService {
     required CollectionArea area,
     required CollectionSchedule schedule,
   }) async {
-    final user = _requireCurrentUser();
+    final user = await _requireCollectorAccessForArea(area);
+
+    _validateAreaAndSchedule(
+      area: area,
+      schedule: schedule,
+    );
 
     final now = DateTime.now();
 
@@ -392,6 +508,12 @@ class CollectionEventService {
       if (snapshot.exists) {
         final data =
             snapshot.data() ?? <String, dynamic>{};
+
+        _requireEventOwnership(
+          data: data,
+          collectorUid: user.uid,
+          areaName: area.areaName,
+        );
 
         final currentStatus =
             data['status']?.toString() ?? 'pending';

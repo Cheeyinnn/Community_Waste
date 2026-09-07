@@ -199,6 +199,7 @@ class _AdminMainScreenState extends State<AdminMainScreen> {
       ),
       const MapPage(
         showAllReports: true,
+        isAdminMode: true,
       ),
       const AdminCollectorApplicationScreen(),
     ];

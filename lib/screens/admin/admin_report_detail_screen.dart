@@ -1581,24 +1581,37 @@ class _AdminReportDetailScreenState extends State<AdminReportDetailScreen> {
               }
 
               if (_reportZoneId.isEmpty) {
-                return DropdownButtonFormField<String>(
-                  value: null,
+                return InputDecorator(
+                  isEmpty: false,
+                  isFocused: false,
                   decoration: InputDecoration(
                     labelText: "Assign Collector",
+                    enabled: false,
                     border: OutlineInputBorder(
                       borderRadius:
                           BorderRadius.circular(12),
+                    ),
+                    disabledBorder: OutlineInputBorder(
+                      borderRadius:
+                          BorderRadius.circular(12),
+                      borderSide: BorderSide(
+                        color: Colors.grey.shade400,
+                      ),
                     ),
                     prefixIcon: const Icon(
                       Icons.delivery_dining_rounded,
                       color: Colors.grey,
                     ),
                   ),
-                  hint: const Text(
+                  child: Text(
                     'Report zone must be identified first',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.grey.shade600,
+                      fontSize: 14,
+                    ),
                   ),
-                  items: const [],
-                  onChanged: null,
                 );
               }
 
@@ -1607,24 +1620,37 @@ class _AdminReportDetailScreenState extends State<AdminReportDetailScreen> {
                   crossAxisAlignment:
                       CrossAxisAlignment.start,
                   children: [
-                    DropdownButtonFormField<String>(
-                      value: null,
+                    InputDecorator(
+                      isEmpty: false,
+                      isFocused: false,
                       decoration: InputDecoration(
                         labelText: "Assign Collector",
+                        enabled: false,
                         border: OutlineInputBorder(
                           borderRadius:
                               BorderRadius.circular(12),
+                        ),
+                        disabledBorder: OutlineInputBorder(
+                          borderRadius:
+                              BorderRadius.circular(12),
+                          borderSide: BorderSide(
+                            color: Colors.grey.shade400,
+                          ),
                         ),
                         prefixIcon: const Icon(
                           Icons.delivery_dining_rounded,
                           color: Colors.grey,
                         ),
                       ),
-                      hint: const Text(
+                      child: Text(
                         'No collector available for this zone',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.grey.shade600,
+                          fontSize: 14,
+                        ),
                       ),
-                      items: const [],
-                      onChanged: null,
                     ),
                     const SizedBox(height: 8),
                     Text(

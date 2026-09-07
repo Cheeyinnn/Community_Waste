@@ -197,6 +197,29 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     }
   }
 
+  Future<String> _getStateFromCoordinates(double lat, double lng) async {
+    try {
+      final placemarks = await placemarkFromCoordinates(lat, lng);
+
+      if (placemarks.isEmpty) {
+        return '';
+      }
+
+      return (placemarks.first.administrativeArea ?? '').trim();
+    } catch (_) {
+      return '';
+    }
+  }
+
+  bool _isPerakLocation({
+    required String location,
+    required String area,
+    required String state,
+  }) {
+    final combined = '$location $area $state'.toLowerCase();
+    return combined.contains('perak');
+  }
+
   Future<void> _showStatusDialog(BuildContext context) async {
     String selectedStatus = _status;
 
@@ -302,8 +325,16 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
 
     String selectedWasteType = _wasteType;
     String selectedArea = _area;
-    double? selectedLatitude;
-    double? selectedLongitude;
+    String selectedState = '';
+    String? locationErrorMessage;
+
+    // The original saved location is treated as already verified.
+    // If the user changes the location text, a Google suggestion must be
+    // selected again before the edit can be saved.
+    String verifiedLocationText = _location.trim();
+
+    double? selectedLatitude = _latitude;
+    double? selectedLongitude = _longitude;
 
     await showDialog(
       context: context,
@@ -321,11 +352,27 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
               );
 
               final newArea = await _getAreaFromCoordinates(lat, lng);
+              final newState = await _getStateFromCoordinates(lat, lng);
+
+              final resolvedArea =
+                  newArea.trim().isNotEmpty ? newArea : address;
+
+              final isPerak = _isPerakLocation(
+                location: address,
+                area: resolvedArea,
+                state: newState,
+              );
 
               setDialogState(() {
                 selectedLatitude = lat;
                 selectedLongitude = lng;
-                selectedArea = newArea.trim().isNotEmpty ? newArea : address;
+                selectedArea = resolvedArea;
+                selectedState = newState;
+                verifiedLocationText = address.trim();
+
+                locationErrorMessage = isPerak
+                    ? null
+                    : 'This service only accepts waste reports within Perak.';
               });
             }
 
@@ -401,6 +448,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                         labelText: 'Search Location',
                         alignLabelWithHint: true,
                         prefixIcon: const Icon(Icons.location_on_outlined),
+                        errorText: locationErrorMessage,
+                        errorMaxLines: 2,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(14),
                         ),
@@ -429,6 +478,12 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
 
                           setDialogState(() {
                             selectedArea = selectedText;
+                            selectedState = '';
+                            verifiedLocationText = '';
+                            selectedLatitude = null;
+                            selectedLongitude = null;
+                            locationErrorMessage =
+                                'Please select a suggested location before saving.';
                           });
                         }
                       },
@@ -453,6 +508,12 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
 
                           setDialogState(() {
                             selectedArea = selectedText;
+                            selectedState = '';
+                            verifiedLocationText = '';
+                            selectedLatitude = null;
+                            selectedLongitude = null;
+                            locationErrorMessage =
+                                'Please select a suggested location before saving.';
                           });
                         }
                       },
@@ -563,7 +624,59 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                         ? selectedArea.trim()
                         : newLocation;
 
-                    Navigator.pop(dialogContext);
+                    final locationChanged =
+                        newLocation != _location.trim();
+
+                    if (locationChanged) {
+                      final hasVerifiedSelection =
+                          verifiedLocationText.isNotEmpty &&
+                          newLocation == verifiedLocationText &&
+                          selectedLatitude != null &&
+                          selectedLongitude != null;
+
+                      if (!hasVerifiedSelection) {
+                        setDialogState(() {
+                          locationErrorMessage =
+                              'Please select a suggested location before saving.';
+                        });
+                        return;
+                      }
+
+                      if (!_isPerakLocation(
+                        location: newLocation,
+                        area: newArea,
+                        state: selectedState,
+                      )) {
+                        setDialogState(() {
+                          locationErrorMessage =
+                              'This service only accepts waste reports within Perak.';
+                        });
+                        return;
+                      }
+
+                      setDialogState(() {
+                        locationErrorMessage = null;
+                      });
+                    }
+
+                    // The Google Places autocomplete widget can keep an
+                    // active focus/overlay while the edit dialog is open.
+                    // Closing the dialog immediately while that overlay is
+                    // still attached can trigger Flutter's
+                    // "_dependents.isEmpty" assertion.
+                    //
+                    // Always release the keyboard/focus first and give the
+                    // autocomplete overlay a short moment to detach before
+                    // removing the dialog route.
+                    FocusManager.instance.primaryFocus?.unfocus();
+
+                    await Future.delayed(
+                      const Duration(milliseconds: 250),
+                    );
+
+                    if (!dialogContext.mounted) return;
+
+                    Navigator.of(dialogContext).pop();
 
                     await _updateUserReport(
                       title: newTitle,
@@ -591,6 +704,14 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
       },
     );
 
+    // Give GooglePlaceAutoCompleteTextField time to finish removing
+    // any internal suggestion/focus overlay before its controller is
+    // disposed. This is especially important when the user presses
+    // Save without selecting a new location.
+    await Future.delayed(
+      const Duration(milliseconds: 250),
+    );
+
     titleController.dispose();
     descriptionController.dispose();
     locationController.dispose();
@@ -606,6 +727,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     double? longitude,
   }) async {
     try {
+      final bool locationChanged = location.trim() != _location.trim();
+
       double? finalLatitude = latitude;
       double? finalLongitude = longitude;
       String finalArea = area.trim().isNotEmpty ? area.trim() : location.trim();
@@ -644,6 +767,33 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           ),
         );
         return;
+      }
+
+      // Final safeguard: if the location was changed, verify the resolved
+      // coordinates still belong to Perak before writing anything to Firestore.
+      if (locationChanged) {
+        final resolvedState = await _getStateFromCoordinates(
+          finalLatitude,
+          finalLongitude,
+        );
+
+        if (!_isPerakLocation(
+          location: location,
+          area: finalArea,
+          state: resolvedState,
+        )) {
+          if (!mounted) return;
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'This service only accepts waste reports within Perak.',
+              ),
+              backgroundColor: Colors.red,
+            ),
+          );
+          return;
+        }
       }
 
       debugPrint('SAVE REPORT LOCATION: $location');
