@@ -9,16 +9,20 @@ class CollectionEventService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  // ============================================================
-  // COLLECTION
-  // ============================================================
+  CollectionReference<Map<String, dynamic>> get _eventsCollection =>
+      _firestore.collection('collection_events');
 
-  CollectionReference<Map<String, dynamic>> get _eventsCollection {
-    return _firestore.collection('collection_events');
-  }
+  CollectionReference<Map<String, dynamic>> get _areasCollection =>
+      _firestore.collection('collection_areas');
+
+  CollectionReference<Map<String, dynamic>> get _schedulesCollection =>
+      _firestore.collection('collection_schedules');
+
+  CollectionReference<Map<String, dynamic>> get _usersCollection =>
+      _firestore.collection('users');
 
   // ============================================================
-  // CURRENT COLLECTOR
+  // CURRENT COLLECTOR / AUTHORIZATION
   // ============================================================
 
   Future<User> _requireCollectorAccessForArea(
@@ -32,23 +36,27 @@ class CollectionEventService {
       );
     }
 
-    final userDoc = await _firestore
-        .collection('users')
-        .doc(user.uid)
-        .get();
+    final userDoc = await _usersCollection.doc(user.uid).get();
 
-    if (!userDoc.exists) {
+    if (!userDoc.exists || userDoc.data() == null) {
       throw StateError(
         'Collector account was not found.',
       );
     }
 
-    final data = userDoc.data() ?? <String, dynamic>{};
+    final data = userDoc.data()!;
 
     final role =
         data['role']?.toString().trim().toLowerCase() ?? '';
 
-    if (role != 'collector') {
+    final applicationStatus =
+        data['collectorApplicationStatus']
+                ?.toString()
+                .trim()
+                .toLowerCase() ??
+            '';
+
+    if (role != 'collector' || applicationStatus != 'approved') {
       throw StateError(
         'Only an approved Collector account can update collection runs.',
       );
@@ -63,13 +71,15 @@ class CollectionEventService {
             .toSet()
         : <String>{};
 
-    if (area.zoneId.trim().isEmpty) {
+    final zoneId = area.zoneId.trim();
+
+    if (zoneId.isEmpty) {
       throw StateError(
         'This collection area does not have a valid collection zone.',
       );
     }
 
-    if (!assignedZoneIds.contains(area.zoneId.trim())) {
+    if (!assignedZoneIds.contains(zoneId)) {
       throw StateError(
         'This collection area is not assigned to the current collector.',
       );
@@ -81,13 +91,54 @@ class CollectionEventService {
       );
     }
 
+    // Re-check the area against the current Firestore record.
+    // This prevents stale UI data from authorizing an old zone or
+    // an area that has since been disabled by Admin.
+    final areaDoc = await _areasCollection.doc(area.id).get();
+
+    if (!areaDoc.exists || areaDoc.data() == null) {
+      throw StateError(
+        'The collection area no longer exists.',
+      );
+    }
+
+    final liveArea = CollectionArea.fromDocument(areaDoc);
+
+    if (!liveArea.isActive) {
+      throw StateError(
+        '${liveArea.areaName} is currently inactive.',
+      );
+    }
+
+    if (liveArea.zoneId.trim() != zoneId) {
+      throw StateError(
+        'The collection area information has changed. Please refresh and try again.',
+      );
+    }
+
+    if (!assignedZoneIds.contains(liveArea.zoneId.trim())) {
+      throw StateError(
+        'This collection area is no longer assigned to the current collector.',
+      );
+    }
+
     return user;
   }
 
-  void _validateAreaAndSchedule({
+  // ============================================================
+  // AREA / SCHEDULE VALIDATION
+  // ============================================================
+
+  Future<void> _validateAreaAndSchedule({
     required CollectionArea area,
     required CollectionSchedule schedule,
-  }) {
+  }) async {
+    if (!area.isActive) {
+      throw StateError(
+        '${area.areaName} is currently inactive.',
+      );
+    }
+
     if (!schedule.isActive) {
       throw StateError(
         'The collection schedule for ${area.areaName} is currently inactive.',
@@ -109,6 +160,33 @@ class CollectionEventService {
         'The selected collection schedule does not match the collection zone.',
       );
     }
+
+    // Re-check the schedule from Firestore so an old/stale local
+    // schedule cannot be used after Admin changes the configuration.
+    final scheduleDoc =
+        await _schedulesCollection.doc(schedule.id).get();
+
+    if (!scheduleDoc.exists || scheduleDoc.data() == null) {
+      throw StateError(
+        'The collection schedule no longer exists.',
+      );
+    }
+
+    final liveSchedule =
+        CollectionSchedule.fromDocument(scheduleDoc);
+
+    if (!liveSchedule.isActive) {
+      throw StateError(
+        'The collection schedule for ${area.areaName} is currently inactive.',
+      );
+    }
+
+    if (liveSchedule.scheduleId.trim() != area.scheduleId.trim() ||
+        liveSchedule.zoneId.trim() != area.zoneId.trim()) {
+      throw StateError(
+        'The collection schedule has changed. Please refresh and try again.',
+      );
+    }
   }
 
   void _requireEventOwnership({
@@ -127,22 +205,30 @@ class CollectionEventService {
     }
   }
 
+  void _requireEventMatchesArea({
+    required Map<String, dynamic> data,
+    required CollectionArea area,
+  }) {
+    final eventAreaId =
+        data['areaId']?.toString().trim() ?? '';
+    final eventZoneId =
+        data['zoneId']?.toString().trim() ?? '';
+
+    if (eventAreaId != area.areaId.trim() ||
+        eventZoneId != area.zoneId.trim()) {
+      throw StateError(
+        'The collection event does not match the selected area.',
+      );
+    }
+  }
+
   // ============================================================
-  // TODAY DATE STRING
-  //
-  // Example:
-  // 2026-09-02
+  // DATE / EVENT ID HELPERS
   // ============================================================
 
   String getTodayDateString() {
     return formatDate(DateTime.now());
   }
-
-  // ============================================================
-  // FORMAT DATE
-  //
-  // Store collection date as local YYYY-MM-DD.
-  // ============================================================
 
   String formatDate(DateTime date) {
     final year = date.year.toString().padLeft(4, '0');
@@ -152,34 +238,30 @@ class CollectionEventService {
     return '$year-$month-$day';
   }
 
-  // ============================================================
-  // EVENT DOCUMENT ID
-  //
-  // One event per:
-  // area + collection date
-  //
-  // Example:
-  // kampar_zone_2_taman_bandar_barat_2026_09_02
-  // ============================================================
-
   String buildEventId({
     required String areaId,
     required DateTime date,
   }) {
-    final safeAreaId = areaId
-        .trim()
+    final cleanAreaId = areaId.trim();
+
+    if (cleanAreaId.isEmpty) {
+      throw ArgumentError(
+        'Collection area ID cannot be empty.',
+      );
+    }
+
+    final safeAreaId = cleanAreaId
         .replaceAll('/', '_')
         .replaceAll(RegExp(r'\s+'), '_');
 
-    final datePart = formatDate(
-      date,
-    ).replaceAll('-', '_');
+    final datePart =
+        formatDate(date).replaceAll('-', '_');
 
     return '${safeAreaId}_$datePart';
   }
 
   // ============================================================
-  // GET EVENT FOR A DATE
+  // READ EVENT
   // ============================================================
 
   Future<CollectionEvent?> getEventForDate({
@@ -191,9 +273,8 @@ class CollectionEventService {
       date: date,
     );
 
-    final doc = await _eventsCollection
-        .doc(eventId)
-        .get();
+    final doc =
+        await _eventsCollection.doc(eventId).get();
 
     if (!doc.exists) {
       return null;
@@ -202,22 +283,14 @@ class CollectionEventService {
     return CollectionEvent.fromDocument(doc);
   }
 
-  // ============================================================
-  // GET TODAY EVENT
-  // ============================================================
-
   Future<CollectionEvent?> getTodayEvent(
     CollectionArea area,
-  ) async {
+  ) {
     return getEventForDate(
       area: area,
       date: DateTime.now(),
     );
   }
-
-  // ============================================================
-  // WATCH EVENT FOR A DATE
-  // ============================================================
 
   Stream<CollectionEvent?> watchEventForDate({
     required CollectionArea area,
@@ -240,12 +313,6 @@ class CollectionEventService {
     });
   }
 
-  // ============================================================
-  // WATCH TODAY EVENT
-  //
-  // User screen can listen to this.
-  // ============================================================
-
   Stream<CollectionEvent?> watchTodayEvent(
     CollectionArea area,
   ) {
@@ -257,31 +324,22 @@ class CollectionEventService {
 
   // ============================================================
   // START COLLECTION
-  //
-  // Collector presses:
-  //
-  // [ Start Collection ]
-  //
-  // Result:
-  // status = in_progress
-  // startedAt = server timestamp
   // ============================================================
 
   Future<void> startCollection({
     required CollectionArea area,
     required CollectionSchedule schedule,
   }) async {
-    final user = await _requireCollectorAccessForArea(area);
+    final user =
+        await _requireCollectorAccessForArea(area);
 
-    _validateAreaAndSchedule(
+    await _validateAreaAndSchedule(
       area: area,
       schedule: schedule,
     );
 
     final now = DateTime.now();
 
-    // The collector should only start an area
-    // scheduled for collection today.
     if (!schedule.collectsOnDay(now.weekday)) {
       throw StateError(
         '${area.areaName} is not scheduled for collection today.',
@@ -295,110 +353,101 @@ class CollectionEventService {
       date: now,
     );
 
-    final eventRef = _eventsCollection.doc(eventId);
+    final eventRef =
+        _eventsCollection.doc(eventId);
 
-    await _firestore.runTransaction((transaction) async {
-      final snapshot = await transaction.get(eventRef);
+    await _firestore.runTransaction(
+      (transaction) async {
+        final snapshot =
+            await transaction.get(eventRef);
 
-      // ========================================================
-      // EVENT ALREADY EXISTS
-      // ========================================================
+        if (snapshot.exists) {
+          final data =
+              snapshot.data() ?? <String, dynamic>{};
 
-      if (snapshot.exists) {
-        final data =
-            snapshot.data() ?? <String, dynamic>{};
+          _requireEventOwnership(
+            data: data,
+            collectorUid: user.uid,
+            areaName: area.areaName,
+          );
 
-        _requireEventOwnership(
-          data: data,
-          collectorUid: user.uid,
-          areaName: area.areaName,
-        );
+          _requireEventMatchesArea(
+            data: data,
+            area: area,
+          );
 
-        final currentStatus =
-            data['status']?.toString() ?? 'pending';
+          final currentStatus =
+              data['status']?.toString().trim() ??
+                  'pending';
 
-        // Already running.
-        if (currentStatus == 'in_progress') {
+          if (currentStatus == 'in_progress') {
+            return;
+          }
+
+          if (currentStatus == 'collected') {
+            throw StateError(
+              '${area.areaName} has already been marked as collected today.',
+            );
+          }
+
+          if (currentStatus == 'missed') {
+            throw StateError(
+              '${area.areaName} has already been marked as missed today.',
+            );
+          }
+
+          if (currentStatus != 'pending') {
+            throw StateError(
+              'This collection event has an invalid status and cannot be started.',
+            );
+          }
+
+          transaction.update(
+            eventRef,
+            {
+              'status': 'in_progress',
+              'collectorId': user.uid,
+              if (data['startedAt'] == null)
+                'startedAt':
+                    FieldValue.serverTimestamp(),
+              'updatedAt':
+                  FieldValue.serverTimestamp(),
+            },
+          );
+
           return;
         }
 
-        // Never restart an already completed event.
-        if (currentStatus == 'collected') {
-          throw StateError(
-            '${area.areaName} has already been marked as collected today.',
-          );
-        }
-
-        if (currentStatus == 'missed') {
-          throw StateError(
-            '${area.areaName} has already been marked as missed today.',
-          );
-        }
-
-        transaction.update(
+        transaction.set(
           eventRef,
           {
+            'areaId': area.areaId,
+            'areaName': area.areaName,
+            'scheduleId': schedule.scheduleId,
+            'zoneId': area.zoneId,
+            'zoneName': area.zoneName,
+            'collectionDate': collectionDate,
             'status': 'in_progress',
             'collectorId': user.uid,
-
-            // Only fill startedAt if it does not already exist.
-            if (data['startedAt'] == null)
-              'startedAt': FieldValue.serverTimestamp(),
-
+            'startedAt': FieldValue.serverTimestamp(),
+            'collectedAt': null,
+            'createdAt': FieldValue.serverTimestamp(),
             'updatedAt': FieldValue.serverTimestamp(),
           },
         );
-
-        return;
-      }
-
-      // ========================================================
-      // CREATE NEW EVENT
-      // ========================================================
-
-      transaction.set(
-        eventRef,
-        {
-          'areaId': area.areaId,
-          'areaName': area.areaName,
-
-          'scheduleId': schedule.scheduleId,
-
-          'zoneId': area.zoneId,
-          'zoneName': area.zoneName,
-
-          'collectionDate': collectionDate,
-
-          'status': 'in_progress',
-
-          'collectorId': user.uid,
-
-          'startedAt': FieldValue.serverTimestamp(),
-          'collectedAt': null,
-
-          'createdAt': FieldValue.serverTimestamp(),
-          'updatedAt': FieldValue.serverTimestamp(),
-        },
-      );
-    });
+      },
+    );
   }
 
   // ============================================================
   // MARK AS COLLECTED
-  //
-  // Collector presses:
-  //
-  // [ Mark as Collected ]
-  //
-  // Result:
-  // status = collected
-  // collectedAt = actual server time
   // ============================================================
 
   Future<void> markAsCollected({
     required CollectionArea area,
   }) async {
-    final user = await _requireCollectorAccessForArea(area);
+    final user =
+        await _requireCollectorAccessForArea(area);
 
     final now = DateTime.now();
 
@@ -407,76 +456,91 @@ class CollectionEventService {
       date: now,
     );
 
-    final eventRef = _eventsCollection.doc(eventId);
+    final eventRef =
+        _eventsCollection.doc(eventId);
 
-    await _firestore.runTransaction((transaction) async {
-      final snapshot = await transaction.get(eventRef);
+    await _firestore.runTransaction(
+      (transaction) async {
+        final snapshot =
+            await transaction.get(eventRef);
 
-      if (!snapshot.exists) {
-        throw StateError(
-          'Start the collection for ${area.areaName} before marking it as collected.',
+        if (!snapshot.exists ||
+            snapshot.data() == null) {
+          throw StateError(
+            'Start the collection for ${area.areaName} before marking it as collected.',
+          );
+        }
+
+        final data = snapshot.data()!;
+
+        _requireEventOwnership(
+          data: data,
+          collectorUid: user.uid,
+          areaName: area.areaName,
         );
-      }
 
-      final data =
-          snapshot.data() ?? <String, dynamic>{};
-
-      _requireEventOwnership(
-        data: data,
-        collectorUid: user.uid,
-        areaName: area.areaName,
-      );
-
-      final currentStatus =
-          data['status']?.toString() ?? 'pending';
-
-      if (currentStatus == 'collected') {
-        // Already completed.
-        return;
-      }
-
-      if (currentStatus == 'missed') {
-        throw StateError(
-          '${area.areaName} has already been marked as missed.',
+        _requireEventMatchesArea(
+          data: data,
+          area: area,
         );
-      }
 
-      if (currentStatus != 'in_progress') {
-        throw StateError(
-          'Start the collection before marking ${area.areaName} as collected.',
+        final eventDate =
+            data['collectionDate']?.toString().trim() ??
+                '';
+
+        if (eventDate != formatDate(now)) {
+          throw StateError(
+            'Only today\'s collection event can be updated.',
+          );
+        }
+
+        final currentStatus =
+            data['status']?.toString().trim() ??
+                'pending';
+
+        if (currentStatus == 'collected') {
+          return;
+        }
+
+        if (currentStatus == 'missed') {
+          throw StateError(
+            '${area.areaName} has already been marked as missed.',
+          );
+        }
+
+        if (currentStatus != 'in_progress') {
+          throw StateError(
+            'Start the collection before marking ${area.areaName} as collected.',
+          );
+        }
+
+        transaction.update(
+          eventRef,
+          {
+            'status': 'collected',
+            'collectorId': user.uid,
+            'collectedAt':
+                FieldValue.serverTimestamp(),
+            'updatedAt':
+                FieldValue.serverTimestamp(),
+          },
         );
-      }
-
-      transaction.update(
-        eventRef,
-        {
-          'status': 'collected',
-
-          'collectorId': user.uid,
-
-          'collectedAt': FieldValue.serverTimestamp(),
-
-          'updatedAt': FieldValue.serverTimestamp(),
-        },
-      );
-    });
+      },
+    );
   }
 
   // ============================================================
   // MARK AS MISSED
-  //
-  // Optional feature.
-  //
-  // Useful if a scheduled area could not be collected.
   // ============================================================
 
   Future<void> markAsMissed({
     required CollectionArea area,
     required CollectionSchedule schedule,
   }) async {
-    final user = await _requireCollectorAccessForArea(area);
+    final user =
+        await _requireCollectorAccessForArea(area);
 
-    _validateAreaAndSchedule(
+    await _validateAreaAndSchedule(
       area: area,
       schedule: schedule,
     );
@@ -496,85 +560,86 @@ class CollectionEventService {
       date: now,
     );
 
-    final eventRef = _eventsCollection.doc(eventId);
+    final eventRef =
+        _eventsCollection.doc(eventId);
 
-    await _firestore.runTransaction((transaction) async {
-      final snapshot = await transaction.get(eventRef);
+    await _firestore.runTransaction(
+      (transaction) async {
+        final snapshot =
+            await transaction.get(eventRef);
 
-      // ========================================================
-      // EXISTING EVENT
-      // ========================================================
+        if (snapshot.exists) {
+          final data =
+              snapshot.data() ?? <String, dynamic>{};
 
-      if (snapshot.exists) {
-        final data =
-            snapshot.data() ?? <String, dynamic>{};
-
-        _requireEventOwnership(
-          data: data,
-          collectorUid: user.uid,
-          areaName: area.areaName,
-        );
-
-        final currentStatus =
-            data['status']?.toString() ?? 'pending';
-
-        if (currentStatus == 'collected') {
-          throw StateError(
-            '${area.areaName} has already been collected today.',
+          _requireEventOwnership(
+            data: data,
+            collectorUid: user.uid,
+            areaName: area.areaName,
           );
-        }
 
-        if (currentStatus == 'missed') {
+          _requireEventMatchesArea(
+            data: data,
+            area: area,
+          );
+
+          final currentStatus =
+              data['status']?.toString().trim() ??
+                  'pending';
+
+          if (currentStatus == 'collected') {
+            throw StateError(
+              '${area.areaName} has already been collected today.',
+            );
+          }
+
+          if (currentStatus == 'missed') {
+            return;
+          }
+
+          if (currentStatus != 'pending' &&
+              currentStatus != 'in_progress') {
+            throw StateError(
+              'This collection event has an invalid status and cannot be marked as missed.',
+            );
+          }
+
+          transaction.update(
+            eventRef,
+            {
+              'status': 'missed',
+              'collectorId': user.uid,
+              'updatedAt':
+                  FieldValue.serverTimestamp(),
+            },
+          );
+
           return;
         }
 
-        transaction.update(
+        transaction.set(
           eventRef,
           {
+            'areaId': area.areaId,
+            'areaName': area.areaName,
+            'scheduleId': schedule.scheduleId,
+            'zoneId': area.zoneId,
+            'zoneName': area.zoneName,
+            'collectionDate': collectionDate,
             'status': 'missed',
             'collectorId': user.uid,
+            'startedAt': null,
+            'collectedAt': null,
+            'createdAt': FieldValue.serverTimestamp(),
             'updatedAt': FieldValue.serverTimestamp(),
           },
         );
-
-        return;
-      }
-
-      // ========================================================
-      // CREATE MISSED EVENT
-      // ========================================================
-
-      transaction.set(
-        eventRef,
-        {
-          'areaId': area.areaId,
-          'areaName': area.areaName,
-
-          'scheduleId': schedule.scheduleId,
-
-          'zoneId': area.zoneId,
-          'zoneName': area.zoneName,
-
-          'collectionDate': collectionDate,
-
-          'status': 'missed',
-
-          'collectorId': user.uid,
-
-          'startedAt': null,
-          'collectedAt': null,
-
-          'createdAt': FieldValue.serverTimestamp(),
-          'updatedAt': FieldValue.serverTimestamp(),
-        },
-      );
-    });
+      },
+    );
   }
 
   // ============================================================
-  // GET TODAY'S EVENTS FOR CURRENT COLLECTOR
-  //
-  // This can later be used on Collector Dashboard.
+  // CURRENT COLLECTOR EVENTS
   // ============================================================
 
   Stream<List<CollectionEvent>> watchMyTodayEvents() {
@@ -600,9 +665,7 @@ class CollectionEventService {
         .snapshots()
         .map((snapshot) {
       final events = snapshot.docs
-          .map(
-            CollectionEvent.fromDocument,
-          )
+          .map(CollectionEvent.fromDocument)
           .toList();
 
       events.sort(
@@ -618,9 +681,7 @@ class CollectionEventService {
   }
 
   // ============================================================
-  // GET ALL TODAY EVENTS
-  //
-  // Useful later for admin monitoring.
+  // ALL TODAY EVENTS
   // ============================================================
 
   Stream<List<CollectionEvent>> watchAllTodayEvents() {
@@ -634,9 +695,7 @@ class CollectionEventService {
         .snapshots()
         .map((snapshot) {
       final events = snapshot.docs
-          .map(
-            CollectionEvent.fromDocument,
-          )
+          .map(CollectionEvent.fromDocument)
           .toList();
 
       events.sort(

@@ -13,6 +13,8 @@ import '../../models/waste_report.dart';
 import '../../services/firestore_service.dart';
 import '../../services/storage_service.dart';
 import '../../services/waste_ai_service.dart';
+import '../../config/local_api_keys.dart';
+
 
 class CreateReportScreen extends StatefulWidget {
   const CreateReportScreen({super.key});
@@ -33,8 +35,59 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
   final StorageService _storageService = StorageService();
   final WasteAiService _wasteAiService = WasteAiService();
 
-  // Keep your current working Google API key here.
-  static const String _googleApiKey = 'AIzaSyBHoNEbIfc0lqJ74D70b26P8_vxL5DSw9s';
+  String get _googleApiKey {
+    final key = kGooglePlacesApiKey.trim();
+
+    if (key.isEmpty || key == 'PASTE_YOUR_GOOGLE_API_KEY_HERE') {
+      throw StateError(
+        'Google Places API key is not configured. '
+        'Open lib/config/local_api_keys.dart and paste your working key.',
+      );
+    }
+
+    return key;
+  }
+
+  Future<Map<String, dynamic>> _getGoogleJson(
+    Uri url, {
+    String errorLabel = 'Google API request',
+  }) async {
+    final client = HttpClient();
+
+    try {
+      final request = await client
+          .getUrl(url)
+          .timeout(const Duration(seconds: 12));
+
+      final response = await request
+          .close()
+          .timeout(const Duration(seconds: 12));
+
+      final responseBody = await response
+          .transform(utf8.decoder)
+          .join()
+          .timeout(const Duration(seconds: 12));
+
+      if (response.statusCode != 200) {
+        throw Exception(
+          '$errorLabel failed with HTTP ${response.statusCode}.',
+        );
+      }
+
+      final decoded = jsonDecode(responseBody);
+
+      if (decoded is! Map<String, dynamic>) {
+        throw Exception(
+          '$errorLabel returned an invalid response.',
+        );
+      }
+
+      return decoded;
+    } finally {
+      client.close(force: true);
+    }
+  }
+
 
   File? _imageFile;
 
@@ -145,15 +198,10 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
         },
       );
 
-      final request = await HttpClient().getUrl(url);
-      final response = await request.close();
-      final responseBody = await response.transform(utf8.decoder).join();
-
-      if (response.statusCode != 200) {
-        throw Exception('Location search failed');
-      }
-
-      final data = jsonDecode(responseBody) as Map<String, dynamic>;
+      final data = await _getGoogleJson(
+        url,
+        errorLabel: 'Location search',
+      );
       final status = data['status']?.toString() ?? '';
 
       // Ignore an old response if the user has already typed something else.
@@ -244,15 +292,10 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
             'fields': 'formatted_address,geometry,address_components',
           });
 
-      final request = await HttpClient().getUrl(url);
-      final response = await request.close();
-      final responseBody = await response.transform(utf8.decoder).join();
-
-      if (response.statusCode != 200) {
-        throw Exception('Failed to load location details');
-      }
-
-      final data = jsonDecode(responseBody) as Map<String, dynamic>;
+      final data = await _getGoogleJson(
+        url,
+        errorLabel: 'Location details',
+      );
 
       if (data['status'] != 'OK' || data['result'] == null) {
         throw Exception(
@@ -968,12 +1011,10 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
         '&key=$_googleApiKey',
       );
 
-      final request = await HttpClient().getUrl(url);
-      final response = await request.close();
-
-      final responseBody = await response.transform(utf8.decoder).join();
-
-      final data = jsonDecode(responseBody);
+      final data = await _getGoogleJson(
+        url,
+        errorLabel: 'Reverse geocoding',
+      );
 
       String detectedAddress = '';
       Map<String, dynamic>? googleResult;

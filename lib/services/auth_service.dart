@@ -5,22 +5,27 @@ import '../models/app_user.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseFirestore _firestore =
+      FirebaseFirestore.instance;
+
+  // ============================================================
+  // CURRENT FIREBASE USER
+  // ============================================================
 
   User? get currentUser => _auth.currentUser;
 
-  Stream<User?> get authStateChanges => _auth.authStateChanges();
+  Stream<User?> get authStateChanges =>
+      _auth.authStateChanges();
 
   // ============================================================
   // REGISTER
   //
-  // Every account created from the public Register screen starts
-  // as a normal user.
+  // All public registrations start as:
   //
-  // Only NEW accounts created through this method get:
-  // emailVerificationRequired = true
+  // role = user
   //
-  // Existing accounts without this field keep working normally.
+  // Admin and Collector roles must NEVER be created from the
+  // public registration screen.
   // ============================================================
 
   Future<UserCredential> register({
@@ -28,53 +33,120 @@ class AuthService {
     required String email,
     required String password,
   }) async {
+    UserCredential? credential;
+
     try {
-      final credential = await _auth.createUserWithEmailAndPassword(
-        email: email.trim(),
-        password: password.trim(),
+      final cleanName = name.trim();
+      final cleanEmail = email.trim();
+
+      if (cleanName.isEmpty) {
+        throw Exception('Name is required.');
+      }
+
+      if (cleanEmail.isEmpty) {
+        throw Exception('Email is required.');
+      }
+
+      credential =
+          await _auth.createUserWithEmailAndPassword(
+        email: cleanEmail,
+        password: password,
       );
 
       final user = credential.user;
 
-      if (user != null) {
-        await user.updateDisplayName(name.trim());
-
-        final appUser = AppUser(
-          uid: user.uid,
-          name: name.trim(),
-          email: email.trim(),
-          role: 'user',
+      if (user == null) {
+        throw Exception(
+          'Unable to create Firebase user.',
         );
+      }
 
-        final data = <String, dynamic>{
-          ...appUser.toMap(),
-          'emailVerificationRequired': true,
-          'emailVerified': false,
-          'emailVerificationStartedAt': FieldValue.serverTimestamp(),
-        };
+      // --------------------------------------------------------
+      // Firebase Authentication display name
+      // --------------------------------------------------------
 
-        await _firestore.collection('users').doc(user.uid).set(
-          data,
-          SetOptions(merge: true),
-        );
+      await user.updateDisplayName(cleanName);
+
+      // --------------------------------------------------------
+      // Firestore application user document
+      // --------------------------------------------------------
+
+      final appUser = AppUser(
+        uid: user.uid,
+        name: cleanName,
+        email: cleanEmail,
+        role: 'user',
+      );
+
+      final data = <String, dynamic>{
+        ...appUser.toMap(),
+
+        // New public accounts must verify their email.
+        'emailVerificationRequired': true,
+        'emailVerified': false,
+        'emailVerificationStartedAt':
+            FieldValue.serverTimestamp(),
+      };
+
+      try {
+        await _firestore
+            .collection('users')
+            .doc(user.uid)
+            .set(data);
+      } catch (e) {
+        // ------------------------------------------------------
+        // IMPORTANT
+        //
+        // If Firebase Auth account creation succeeded but the
+        // Firestore user document failed, do not leave a broken
+        // authentication account behind.
+        // ------------------------------------------------------
 
         try {
-          await user.sendEmailVerification();
-        } on FirebaseAuthException catch (e) {
-          print(
-            'Initial verification email could not be sent: '
-            '${e.code} - ${e.message}',
-          );
-        } catch (e) {
-          print('Initial verification email could not be sent: $e');
+          await user.delete();
+        } catch (_) {
+          // Best-effort cleanup.
         }
+
+        throw Exception(
+          'Unable to create user profile: $e',
+        );
+      }
+
+      // --------------------------------------------------------
+      // EMAIL VERIFICATION
+      // --------------------------------------------------------
+
+      try {
+        await user.sendEmailVerification();
+      } on FirebaseAuthException catch (e) {
+        // Registration itself remains successful.
+        //
+        // The user can use "Resend Verification Email"
+        // from VerifyEmailScreen.
+        print(
+          'Initial verification email could not be sent: '
+          '${e.code} - ${e.message}',
+        );
+      } catch (e) {
+        print(
+          'Initial verification email could not be sent: $e',
+        );
       }
 
       return credential;
     } on FirebaseAuthException catch (e) {
-      throw Exception(_getAuthErrorMessage(e));
+      throw Exception(
+        _getAuthErrorMessage(e),
+      );
     } catch (e) {
-      throw Exception('Registration failed: $e');
+      if (e is Exception) {
+        rethrow;
+      }
+
+      throw Exception(
+        'Registration failed: $e',
+      );
     }
   }
 
@@ -89,12 +161,16 @@ class AuthService {
     try {
       return await _auth.signInWithEmailAndPassword(
         email: email.trim(),
-        password: password.trim(),
+        password: password,
       );
     } on FirebaseAuthException catch (e) {
-      throw Exception(_getAuthErrorMessage(e));
+      throw Exception(
+        _getAuthErrorMessage(e),
+      );
     } catch (e) {
-      throw Exception('Login failed: $e');
+      throw Exception(
+        'Login failed: $e',
+      );
     }
   }
 
@@ -108,58 +184,102 @@ class AuthService {
 
   // ============================================================
   // USER ROLE
+  //
+  // Do NOT silently treat a missing/broken account as "user".
+  //
+  // Only these roles are accepted:
+  //
+  // user
+  // admin
+  // collector
   // ============================================================
 
   Future<String> getUserRole(String uid) async {
     try {
-      final doc = await _firestore.collection('users').doc(uid).get();
-
-      print('Doc exists: ${doc.exists}');
-      print('Doc data: ${doc.data()}');
+      final doc = await _firestore
+          .collection('users')
+          .doc(uid)
+          .get();
 
       if (!doc.exists || doc.data() == null) {
-        return 'user';
+        throw Exception(
+          'User profile does not exist.',
+        );
       }
 
-      final role = doc.data()!['role'];
+      final role =
+          doc.data()!['role']
+              ?.toString()
+              .trim()
+              .toLowerCase() ??
+          '';
 
-      if (role == null) {
-        return 'user';
+      if (role != 'user' &&
+          role != 'admin' &&
+          role != 'collector') {
+        throw Exception(
+          'Invalid user role.',
+        );
       }
 
-      return role.toString().trim().toLowerCase();
+      return role;
     } catch (e) {
-      print('Role read error: $e');
-      return 'user';
+      if (e is Exception) {
+        rethrow;
+      }
+
+      throw Exception(
+        'Unable to read user role: $e',
+      );
     }
   }
 
   // ============================================================
   // EMAIL VERIFICATION REQUIREMENT
   //
-  // Existing account:
-  // field missing -> false
+  // Older development accounts may not contain:
   //
-  // New account:
-  // emailVerificationRequired = true
+  // emailVerificationRequired
+  //
+  // Missing field = false
+  //
+  // However, a Firestore READ FAILURE must NOT silently return
+  // false because that could bypass email verification.
   // ============================================================
 
-  Future<bool> isEmailVerificationRequired(String uid) async {
+  Future<bool> isEmailVerificationRequired(
+    String uid,
+  ) async {
     try {
-      final doc = await _firestore.collection('users').doc(uid).get();
+      final doc = await _firestore
+          .collection('users')
+          .doc(uid)
+          .get();
 
       if (!doc.exists || doc.data() == null) {
+        throw Exception(
+          'User profile does not exist.',
+        );
+      }
+
+      final data = doc.data()!;
+
+      if (!data.containsKey(
+        'emailVerificationRequired',
+      )) {
+        // Compatibility for older development accounts.
         return false;
       }
 
-      final value = doc.data()!['emailVerificationRequired'];
-
-      return value == true;
+      return data['emailVerificationRequired'] == true;
     } catch (e) {
-      // Do not accidentally lock out an existing account if this
-      // optional compatibility field cannot be read.
-      print('Verification requirement read error: $e');
-      return false;
+      if (e is Exception) {
+        rethrow;
+      }
+
+      throw Exception(
+        'Unable to check email verification requirement: $e',
+      );
     }
   }
 
@@ -172,7 +292,9 @@ class AuthService {
       final user = _auth.currentUser;
 
       if (user == null) {
-        throw Exception('No signed-in user found.');
+        throw Exception(
+          'No signed-in user found.',
+        );
       }
 
       await user.reload();
@@ -180,33 +302,43 @@ class AuthService {
       final refreshedUser = _auth.currentUser;
 
       if (refreshedUser == null) {
-        throw Exception('Unable to refresh the current user.');
+        throw Exception(
+          'Unable to refresh the current user.',
+        );
       }
 
+      // Already verified.
       if (refreshedUser.emailVerified) {
         return;
       }
 
       await refreshedUser.sendEmailVerification();
     } on FirebaseAuthException catch (e) {
-      throw Exception(_getAuthErrorMessage(e));
+      throw Exception(
+        _getAuthErrorMessage(e),
+      );
     } catch (e) {
       if (e is Exception) {
         rethrow;
       }
 
-      throw Exception('Failed to send verification email: $e');
+      throw Exception(
+        'Failed to send verification email: $e',
+      );
     }
   }
 
   // ============================================================
-  // CHECK EMAIL VERIFICATION
+  // REFRESH EMAIL VERIFICATION STATUS
   //
   // Firebase Authentication is the source of truth.
-  // If verified, Firestore is updated for convenient display.
+  //
+  // Firestore fields are only synchronized copies used by the
+  // application's UI/database.
   // ============================================================
 
-  Future<bool> refreshEmailVerificationStatus() async {
+  Future<bool>
+      refreshEmailVerificationStatus() async {
     try {
       final user = _auth.currentUser;
 
@@ -222,21 +354,38 @@ class AuthService {
         return false;
       }
 
-      final verified = refreshedUser.emailVerified;
+      final verified =
+          refreshedUser.emailVerified;
 
       if (verified) {
-        await _firestore.collection('users').doc(refreshedUser.uid).set(
+        await _firestore
+            .collection('users')
+            .doc(refreshedUser.uid)
+            .set(
           {
             'emailVerified': true,
-            'emailVerifiedAt': FieldValue.serverTimestamp(),
+            'emailVerifiedAt':
+                FieldValue.serverTimestamp(),
           },
-          SetOptions(merge: true),
+          SetOptions(
+            merge: true,
+          ),
         );
       }
 
       return verified;
+    } on FirebaseAuthException catch (e) {
+      throw Exception(
+        _getAuthErrorMessage(e),
+      );
     } catch (e) {
-      throw Exception('Failed to check email verification: $e');
+      if (e is Exception) {
+        rethrow;
+      }
+
+      throw Exception(
+        'Failed to check email verification: $e',
+      );
     }
   }
 
@@ -252,89 +401,102 @@ class AuthService {
         return null;
       }
 
-      final doc = await _firestore.collection('users').doc(user.uid).get();
+      final doc = await _firestore
+          .collection('users')
+          .doc(user.uid)
+          .get();
 
       if (!doc.exists || doc.data() == null) {
         return null;
       }
 
-      return AppUser.fromMap(doc.data()!, doc.id);
+      return AppUser.fromMap(
+        doc.data()!,
+        doc.id,
+      );
     } catch (e) {
-      throw Exception('Failed to get current user data: $e');
+      throw Exception(
+        'Failed to get current user data: $e',
+      );
     }
   }
 
   // ============================================================
-  // LEGACY / DEVELOPMENT ACCOUNT CREATION
+  // LEGACY PRIVILEGED ACCOUNT CREATION
   //
-  // Kept so your existing testing workflow is not broken.
-  // The public Register screen DOES NOT call this method.
-  // Later, collector promotion should happen by admin approval.
+  // IMPORTANT:
+  //
+  // Previous development versions allowed the Flutter client
+  // to create Admin / Collector accounts directly.
+  //
+  // That is no longer allowed.
+  //
+  // We intentionally keep this method temporarily so any old
+  // file that still references it will continue to COMPILE,
+  // but calling it is blocked.
+  //
+  // After we finish cleaning the whole project and confirm that
+  // nothing references it, we can delete this method entirely.
   // ============================================================
 
+  @Deprecated(
+    'Admin and Collector accounts cannot be created directly '
+    'from the client application.',
+  )
   Future<void> createAdminOrCollectorAccount({
     required String name,
     required String email,
     required String password,
     required String role,
   }) async {
-    try {
-      if (role != 'admin' && role != 'collector') {
-        throw Exception('Role must be admin or collector');
-      }
-
-      final credential = await _auth.createUserWithEmailAndPassword(
-        email: email.trim(),
-        password: password.trim(),
-      );
-
-      final user = credential.user;
-
-      if (user != null) {
-        await user.updateDisplayName(name.trim());
-
-        final appUser = AppUser(
-          uid: user.uid,
-          name: name.trim(),
-          email: email.trim(),
-          role: role,
-        );
-
-        await _firestore.collection('users').doc(user.uid).set(
-          appUser.toMap(),
-        );
-      }
-    } on FirebaseAuthException catch (e) {
-      throw Exception(_getAuthErrorMessage(e));
-    } catch (e) {
-      throw Exception('Failed to create $role account: $e');
-    }
+    throw UnsupportedError(
+      'Direct creation of Admin or Collector accounts '
+      'is disabled. Collector accounts must be promoted '
+      'through Admin approval.',
+    );
   }
 
   // ============================================================
-  // AUTH ERROR MESSAGE
+  // AUTH ERROR MESSAGES
   // ============================================================
 
-  String _getAuthErrorMessage(FirebaseAuthException e) {
+  String _getAuthErrorMessage(
+    FirebaseAuthException e,
+  ) {
     switch (e.code) {
       case 'email-already-in-use':
         return 'This email is already registered.';
+
       case 'invalid-email':
         return 'Invalid email address.';
+
       case 'weak-password':
         return 'Password is too weak.';
+
       case 'user-not-found':
         return 'No user found with this email.';
+
       case 'wrong-password':
         return 'Incorrect password.';
+
       case 'invalid-credential':
         return 'Invalid email or password.';
+
+      case 'user-disabled':
+        return 'This account has been disabled.';
+
       case 'too-many-requests':
         return 'Too many attempts. Please try again later.';
+
       case 'network-request-failed':
         return 'Network error. Please check your internet connection.';
+
+      case 'operation-not-allowed':
+        return 'This authentication method is not enabled.';
+
       default:
-        return e.message ?? 'Authentication error occurred.';
+        return e.message ??
+            'Authentication error occurred.';
     }
   }
 }
