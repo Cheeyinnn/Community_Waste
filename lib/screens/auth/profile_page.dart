@@ -46,6 +46,12 @@ class _ProfilePageState extends State<ProfilePage> {
         file,
       );
 
+      // The profile image is overwritten at a stable Storage path, so the
+      // download URL can remain unchanged. Evict the old Flutter image cache
+      // entry before rebuilding, otherwise Home/Profile may keep showing the
+      // previous bitmap even though Storage already contains the new photo.
+      await NetworkImage(downloadUrl).evict();
+
       // Keep Firebase Authentication profile information synchronized.
       await user.updatePhotoURL(downloadUrl);
 

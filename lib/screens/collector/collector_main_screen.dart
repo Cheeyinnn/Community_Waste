@@ -4,6 +4,7 @@ import 'package:curved_navigation_bar/curved_navigation_bar.dart';
 import '../../screens/collector/collector_dashboard.dart';
 import 'collector_task_screen.dart';
 import 'collector_collection_screen.dart';
+import '../shared/report_messages_fab.dart';
 
 class CollectorMainScreen extends StatefulWidget {
   const CollectorMainScreen({super.key});
@@ -104,11 +105,45 @@ class _CollectorMainScreenState
       const CollectorCollectionScreen(),
     ];
 
-    return WillPopScope(
-      onWillPop: _onWillPop,
-      child: Scaffold(
-        extendBody: true,
-        backgroundColor: const Color(0xFFF7F9FC),
+    final baseTheme = Theme.of(context);
+    final collectorTheme = baseTheme.copyWith(
+      colorScheme: baseTheme.colorScheme.copyWith(
+        primary: const Color(0xFFFFB547),
+        secondary: const Color(0xFFFFB547),
+      ),
+      progressIndicatorTheme: const ProgressIndicatorThemeData(
+        color: Color(0xFFFFB547),
+      ),
+      textSelectionTheme: const TextSelectionThemeData(
+        cursorColor: Color(0xFFFFB547),
+        selectionHandleColor: Color(0xFFFFB547),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: const Color(0xFFFFB547),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: const Color(0xFFFFB547),
+          side: const BorderSide(color: Color(0xFFFFB547)),
+        ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: const Color(0xFFFFB547),
+          foregroundColor: Colors.white,
+        ),
+      ),
+    );
+
+    return Theme(
+      data: collectorTheme,
+      child: WillPopScope(
+        onWillPop: _onWillPop,
+        child: Scaffold(
+          extendBody: true,
+          backgroundColor: const Color(0xFFFFFAF4),
 
         body: SafeArea(
           bottom: false,
@@ -118,13 +153,19 @@ class _CollectorMainScreenState
           ),
         ),
 
+        floatingActionButton: const Padding(
+          padding: EdgeInsets.only(bottom: 72),
+          child: ReportMessagesFab(currentRole: 'collector'),
+        ),
+        floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+
         bottomNavigationBar: CurvedNavigationBar(
           key: _bottomNavigationKey,
           index: _index,
           height: 65.0,
           backgroundColor: Colors.transparent,
-          color: Colors.orange,
-          buttonBackgroundColor: Colors.orange,
+          color: const Color(0xFFFFB547),
+          buttonBackgroundColor: const Color(0xFFFFB547),
           animationCurve: Curves.easeInOut,
           animationDuration: const Duration(
             milliseconds: 300,
@@ -147,6 +188,7 @@ class _CollectorMainScreenState
               color: Colors.white,
             ),
           ],
+          ),
         ),
       ),
     );

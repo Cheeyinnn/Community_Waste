@@ -8,6 +8,12 @@ class AppUser {
   final String email;
   final String role;
 
+  // Overall account access. Existing users without this field are treated as active.
+  final String accountStatus;
+  final String accountSuspensionReason;
+  final Timestamp? accountSuspendedAt;
+  final Timestamp? accountReactivatedAt;
+
   final String photoUrl;
   final String profileImageUrl;
 
@@ -38,6 +44,11 @@ class AppUser {
     required this.name,
     required this.email,
     required this.role,
+
+    this.accountStatus = 'active',
+    this.accountSuspensionReason = '',
+    this.accountSuspendedAt,
+    this.accountReactivatedAt,
 
     this.displayName = '',
     this.photoUrl = '',
@@ -99,6 +110,20 @@ class AppUser {
         map['role'],
         fallback: 'user',
       ).toLowerCase(),
+
+      accountStatus: _asString(
+        map['accountStatus'],
+        fallback: 'active',
+      ).toLowerCase(),
+      accountSuspensionReason: _asString(
+        map['accountSuspensionReason'],
+      ),
+      accountSuspendedAt: _asTimestamp(
+        map['accountSuspendedAt'],
+      ),
+      accountReactivatedAt: _asTimestamp(
+        map['accountReactivatedAt'],
+      ),
 
       photoUrl: photoUrl,
       profileImageUrl: profileImageUrl,
@@ -185,7 +210,20 @@ class AppUser {
       'name': name,
       'email': email,
       'role': role,
+      'accountStatus': accountStatus,
     };
+
+    if (accountSuspensionReason.isNotEmpty) {
+      data['accountSuspensionReason'] = accountSuspensionReason;
+    }
+
+    if (accountSuspendedAt != null) {
+      data['accountSuspendedAt'] = accountSuspendedAt;
+    }
+
+    if (accountReactivatedAt != null) {
+      data['accountReactivatedAt'] = accountReactivatedAt;
+    }
 
     if (displayName.isNotEmpty) {
       data['displayName'] = displayName;
@@ -289,6 +327,11 @@ class AppUser {
     return photoUrl.trim();
   }
 
+  bool get isAccountSuspended =>
+      accountStatus.toLowerCase() == 'suspended';
+
+  bool get isAccountActive => !isAccountSuspended;
+
   bool get isUser =>
       role.toLowerCase() == 'user';
 
@@ -315,6 +358,10 @@ class AppUser {
     String? displayName,
     String? email,
     String? role,
+    String? accountStatus,
+    String? accountSuspensionReason,
+    Timestamp? accountSuspendedAt,
+    Timestamp? accountReactivatedAt,
     String? photoUrl,
     String? profileImageUrl,
     bool? emailVerificationRequired,
@@ -339,6 +386,13 @@ class AppUser {
           displayName ?? this.displayName,
       email: email ?? this.email,
       role: role ?? this.role,
+      accountStatus: accountStatus ?? this.accountStatus,
+      accountSuspensionReason:
+          accountSuspensionReason ?? this.accountSuspensionReason,
+      accountSuspendedAt:
+          accountSuspendedAt ?? this.accountSuspendedAt,
+      accountReactivatedAt:
+          accountReactivatedAt ?? this.accountReactivatedAt,
       photoUrl: photoUrl ?? this.photoUrl,
       profileImageUrl:
           profileImageUrl ??

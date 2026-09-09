@@ -8,12 +8,11 @@ import 'firebase_options.dart';
 
 import 'screens/auth/login_screen.dart';
 import 'screens/auth/verify_email_screen.dart';
-import 'screens/user/user_main.dart';
+import 'screens/user/user_access_gate.dart';
 import 'screens/admin/admin_main_screen.dart';
 import 'screens/collector/collector_main_screen.dart';
 
 import 'services/auth_service.dart';
-
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -124,90 +123,51 @@ class _StartupGateState extends State<StartupGate> {
   void initState() {
     super.initState();
     _startupFuture = _resolveStartup();
-    
   }
 
   Future<_StartupResult> _resolveStartup() async {
-  debugPrint('STARTUP: checking Firebase Auth session');
+    final user = await _authService.authStateChanges.first;
 
-  // ============================================================
-  // 1. CHECK CURRENT FIREBASE AUTH SESSION
-  // ============================================================
+    // ----------------------------------------------------------
+    // NO EXISTING SESSION
+    // ----------------------------------------------------------
 
-  final user = await _authService.authStateChanges.first;
-
-  if (user == null) {
-    debugPrint('STARTUP: no signed-in Firebase user');
-
-    return const _StartupResult(
-      screen: LoginScreen(),
-    );
-  }
-
-  debugPrint(
-    'STARTUP: signed-in Firebase user = ${user.uid}',
-  );
-
-  // ============================================================
-  // 2. READ FIRESTORE USER DOCUMENT
-  // ============================================================
-
-  final userRef =
-      _firestore.collection('users').doc(user.uid);
-
-  final userDoc = await userRef.get();
-
-  if (!userDoc.exists || userDoc.data() == null) {
-    debugPrint(
-      'STARTUP: users/${user.uid} does not exist',
-    );
-
-    // Auth account exists but application user record
-    // is missing. Do not allow access.
-    await _authService.logout();
-
-    return const _StartupResult(
-      screen: LoginScreen(),
-    );
-  }
-
-  final userData = userDoc.data()!;
-
-  // ============================================================
-  // 3. EMAIL VERIFICATION
-  // ============================================================
-  //
-  // Only accounts that contain:
-  //
-  // emailVerificationRequired = true
-  //
-  // are forced to verify.
-  //
-  // This keeps your older development accounts compatible.
-  //
-  // Firebase Authentication's emailVerified value is the
-  // actual source of truth.
-  // ============================================================
-
-  final verificationRequired =
-      userData['emailVerificationRequired'] == true;
-
-  if (verificationRequired) {
-    debugPrint(
-      'STARTUP: email verification is required',
-    );
-
-    // Refresh Firebase user information because the verification
-    // may have happened while the application was closed.
-    await user.reload();
-
-    final refreshedUser = _authService.currentUser;
-
-    if (refreshedUser == null) {
-      debugPrint(
-        'STARTUP: Firebase user disappeared after reload',
+    if (user == null) {
+      return const _StartupResult(
+        screen: LoginScreen(),
       );
+    }
 
+    final userRef =
+        _firestore.collection('users').doc(user.uid);
+
+    final userDoc = await userRef.get();
+
+    final userData =
+        userDoc.data() ?? <String, dynamic>{};
+
+    // ----------------------------------------------------------
+    // OVERALL ACCOUNT SUSPENSION
+    // ----------------------------------------------------------
+
+    final startupRole =
+        userData['role']
+            ?.toString()
+            .trim()
+            .toLowerCase() ??
+        'user';
+
+    final accountStatus =
+        userData['accountStatus']
+            ?.toString()
+            .trim()
+            .toLowerCase() ??
+        'active';
+
+    if (accountStatus == 'suspended' &&
+        startupRole != 'admin') {
+      // A suspended User must not be restored automatically from an
+      // old Firebase session. Sign out and return to LoginScreen.
       await _authService.logout();
 
       return const _StartupResult(
@@ -215,236 +175,159 @@ class _StartupGateState extends State<StartupGate> {
       );
     }
 
-    if (!refreshedUser.emailVerified) {
-      debugPrint(
-        'STARTUP: email is NOT verified',
-      );
+    // ----------------------------------------------------------
+    // EMAIL VERIFICATION
+    // ----------------------------------------------------------
 
+    final verificationRequired =
+        userData['emailVerificationRequired'] == true;
+
+    if (verificationRequired) {
+      await user.reload();
+
+      final refreshedUser =
+          _authService.currentUser;
+
+      if (refreshedUser == null) {
+        return const _StartupResult(
+          screen: LoginScreen(),
+        );
+      }
+
+      if (!refreshedUser.emailVerified) {
+        return _StartupResult(
+          screen: VerifyEmailScreen(
+            email: refreshedUser.email ?? '',
+          ),
+        );
+      }
+
+      await _authService
+          .refreshEmailVerificationStatus();
+    }
+
+    // ----------------------------------------------------------
+    // ROLE
+    // ----------------------------------------------------------
+
+    final role =
+        userData['role']
+            ?.toString()
+            .trim()
+            .toLowerCase() ??
+        'user';
+
+    // ----------------------------------------------------------
+    // ADMIN
+    // ----------------------------------------------------------
+
+    if (role == 'admin') {
+      return const _StartupResult(
+        screen: AdminMainScreen(),
+      );
+    }
+
+    // ----------------------------------------------------------
+    // NORMAL USER
+    // ----------------------------------------------------------
+
+    if (role != 'collector') {
+      return const _StartupResult(
+        screen: UserAccessGate(),
+      );
+    }
+
+    // ----------------------------------------------------------
+    // COLLECTOR APPROVAL INFORMATION
+    // ----------------------------------------------------------
+
+    final applicationStatus =
+        userData['collectorApplicationStatus']
+                ?.toString()
+                .trim()
+                .toLowerCase() ??
+            '';
+
+    final rawZones =
+        userData['assignedCollectionZoneIds'];
+
+    final assignedZones = rawZones is Iterable
+        ? rawZones
+            .map(
+              (item) =>
+                  item.toString().trim(),
+            )
+            .where(
+              (item) => item.isNotEmpty,
+            )
+            .toList()
+        : <String>[];
+
+    final approvedAt =
+        userData['collectorApprovedAt']
+                is Timestamp
+            ? userData['collectorApprovedAt']
+                as Timestamp
+            : null;
+
+    final acknowledgedAt =
+        userData[
+                'collectorApprovalAcknowledgedAt']
+            is Timestamp
+            ? userData[
+                    'collectorApprovalAcknowledgedAt']
+                as Timestamp
+            : null;
+
+    final acknowledgedFlag =
+        userData[
+                'collectorApprovalAcknowledged'] ==
+            true;
+
+    final bool currentApprovalAcknowledged;
+
+    if (!acknowledgedFlag) {
+      currentApprovalAcknowledged = false;
+    } else if (approvedAt == null) {
+      currentApprovalAcknowledged = true;
+    } else if (acknowledgedAt == null) {
+      currentApprovalAcknowledged = false;
+    } else {
+      currentApprovalAcknowledged =
+          !acknowledgedAt
+              .toDate()
+              .isBefore(
+                approvedAt.toDate(),
+              );
+    }
+
+    final isApprovedCollector =
+        applicationStatus == 'approved';
+
+    // ----------------------------------------------------------
+    // NEWLY APPROVED COLLECTOR
+    //
+    // Keep Firebase session.
+    // Show approval dialog directly after app reopen.
+    // ----------------------------------------------------------
+
+    if (isApprovedCollector &&
+        !currentApprovalAcknowledged) {
       return _StartupResult(
-        screen: VerifyEmailScreen(
-          email: refreshedUser.email ?? '',
-        ),
+        screen: const CollectorMainScreen(),
+        showCollectorApproval: true,
+        assignedZones: assignedZones,
       );
     }
 
-    debugPrint(
-      'STARTUP: Firebase confirms email is verified',
-    );
-
-    // Keep the Firestore convenience fields synchronized.
-    if (userData['emailVerified'] != true) {
-      await userRef.set(
-        {
-          'emailVerified': true,
-          'emailVerifiedAt':
-              FieldValue.serverTimestamp(),
-        },
-        SetOptions(merge: true),
-      );
-    }
-  }
-
-  // ============================================================
-  // 4. READ AND VALIDATE ROLE
-  // ============================================================
-
-  final role =
-      userData['role']
-          ?.toString()
-          .trim()
-          .toLowerCase() ??
-      'user';
-
-  debugPrint(
-    'STARTUP: application role = $role',
-  );
-
-  // ============================================================
-  // 5. ADMIN
-  // ============================================================
-
-  if (role == 'admin') {
-    debugPrint(
-      'STARTUP: routing to AdminMainScreen',
-    );
+    // ----------------------------------------------------------
+    // NORMAL EXISTING COLLECTOR SESSION
+    // ----------------------------------------------------------
 
     return const _StartupResult(
-      screen: AdminMainScreen(),
+      screen: CollectorMainScreen(),
     );
   }
-
-  // ============================================================
-  // 6. NORMAL USER
-  // ============================================================
-
-  if (role == 'user') {
-    debugPrint(
-      'STARTUP: routing to UserMain',
-    );
-
-    return const _StartupResult(
-      screen: UserMain(),
-    );
-  }
-
-  // ============================================================
-  // 7. INVALID ROLE
-  // ============================================================
-  //
-  // Previously your code treated any role other than
-  // "collector" as a normal user.
-  //
-  // Example:
-  //
-  // role = abc
-  //
-  // would enter UserMain.
-  //
-  // Only user/admin/collector are accepted now.
-  // ============================================================
-
-  if (role != 'collector') {
-    debugPrint(
-      'STARTUP: invalid role "$role"',
-    );
-
-    await _authService.logout();
-
-    return const _StartupResult(
-      screen: LoginScreen(),
-    );
-  }
-
-  // ============================================================
-  // 8. COLLECTOR APPLICATION STATUS
-  // ============================================================
-
-  final applicationStatus =
-      userData['collectorApplicationStatus']
-              ?.toString()
-              .trim()
-              .toLowerCase() ??
-          '';
-
-  debugPrint(
-    'STARTUP: collector application status = '
-    '$applicationStatus',
-  );
-
-  // A user must not enter CollectorMainScreen simply because
-  // their role field says collector.
-  //
-  // The collector application must also be approved.
-  if (applicationStatus != 'approved') {
-    debugPrint(
-      'STARTUP: collector account is not approved',
-    );
-
-    await _authService.logout();
-
-    return const _StartupResult(
-      screen: LoginScreen(),
-    );
-  }
-
-  // ============================================================
-  // 9. COLLECTOR ASSIGNED ZONES
-  // ============================================================
-
-  final rawZones =
-      userData['assignedCollectionZoneIds'];
-
-  final assignedZones = rawZones is Iterable
-      ? rawZones
-          .map(
-            (item) => item.toString().trim(),
-          )
-          .where(
-            (item) => item.isNotEmpty,
-          )
-          .toList()
-      : <String>[];
-
-  // ============================================================
-  // 10. COLLECTOR APPROVAL TIMESTAMPS
-  // ============================================================
-
-  final approvedAt =
-      userData['collectorApprovedAt'] is Timestamp
-          ? userData['collectorApprovedAt']
-              as Timestamp
-          : null;
-
-  final acknowledgedAt =
-      userData[
-              'collectorApprovalAcknowledgedAt']
-          is Timestamp
-          ? userData[
-                  'collectorApprovalAcknowledgedAt']
-              as Timestamp
-          : null;
-
-  final acknowledgedFlag =
-      userData[
-              'collectorApprovalAcknowledged'] ==
-          true;
-
-  // ============================================================
-  // 11. DETERMINE WHETHER CURRENT APPROVAL WAS ACKNOWLEDGED
-  // ============================================================
-
-  final bool currentApprovalAcknowledged;
-
-  if (!acknowledgedFlag) {
-    // User has never acknowledged collector approval.
-    currentApprovalAcknowledged = false;
-  } else if (approvedAt == null) {
-    // Compatibility for an older collector record that did
-    // not store collectorApprovedAt.
-    currentApprovalAcknowledged = true;
-  } else if (acknowledgedAt == null) {
-    // Approval exists but acknowledgement timestamp does not.
-    currentApprovalAcknowledged = false;
-  } else {
-    // If collector was approved again later, an old
-    // acknowledgement must not automatically acknowledge
-    // the new approval.
-    currentApprovalAcknowledged =
-        !acknowledgedAt
-            .toDate()
-            .isBefore(
-              approvedAt.toDate(),
-            );
-  }
-
-  // ============================================================
-  // 12. NEWLY APPROVED COLLECTOR
-  // ============================================================
-
-  if (!currentApprovalAcknowledged) {
-    debugPrint(
-      'STARTUP: collector approval acknowledgement required',
-    );
-
-    return _StartupResult(
-      screen: const CollectorMainScreen(),
-      showCollectorApproval: true,
-      assignedZones: assignedZones,
-    );
-  }
-
-  // ============================================================
-  // 13. EXISTING APPROVED COLLECTOR
-  // ============================================================
-
-  debugPrint(
-    'STARTUP: routing approved collector to CollectorMainScreen',
-  );
-
-  return const _StartupResult(
-    screen: CollectorMainScreen(),
-  );
-}
 
   Future<void> _showCollectorApprovalDialog(
     List<String> assignedZones,

@@ -11,6 +11,7 @@ import 'notification_page.dart';
 import 'collector_application_screen.dart';
 import '../auth/profile_page.dart';
 import '../auth/login_screen.dart';
+import '../shared/report_messages_fab.dart';
 
 class HomeScreen extends StatefulWidget {
   final Function(String? statusFilter) onNavigateToReports;
@@ -38,12 +39,10 @@ class _HomeScreenState extends State<HomeScreen>
   void initState() {
     super.initState();
 
-    // HomeScreen is kept alive inside UserMain's IndexedStack.
-    // Listen to Firebase Auth profile changes so an updated
-    // display name or profile photo appears immediately without
-    // requiring logout/login or an app restart.
-    _userSubscription =
-        FirebaseAuth.instance.userChanges().listen((_) {
+    // HomeScreen is kept alive inside UserMain. Listen for Firebase Auth
+    // profile changes so a new display name/profile photo refreshes the
+    // top-right account icon and the main hero card immediately.
+    _userSubscription = FirebaseAuth.instance.userChanges().listen((_) {
       if (mounted) {
         setState(() {});
       }
@@ -285,6 +284,11 @@ class _HomeScreenState extends State<HomeScreen>
           ],
         ),
       ),
+      floatingActionButton: const Padding(
+        padding: EdgeInsets.only(bottom: 72),
+        child: ReportMessagesFab(currentRole: 'user'),
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
 
@@ -571,14 +575,26 @@ class _HomeScreenState extends State<HomeScreen>
                 iconColor: Colors.blue,
                 title: 'My Profile',
                 subtitle: 'View and edit your account information',
-                onTap: () {
+                onTap: () async {
                   Navigator.pop(sheetContext);
-                  Navigator.push(
+
+                  await Navigator.push(
                     context,
                     MaterialPageRoute(
                       builder: (_) => const ProfilePage(),
                     ),
                   );
+
+                  // Force a fresh Firebase Auth user snapshot when returning
+                  // from ProfilePage. This also covers devices where the
+                  // profile update event arrives slightly late.
+                  try {
+                    await FirebaseAuth.instance.currentUser?.reload();
+                  } catch (_) {}
+
+                  if (mounted) {
+                    setState(() {});
+                  }
                 },
               ),
               const SizedBox(height: 10),
@@ -606,18 +622,10 @@ class _HomeScreenState extends State<HomeScreen>
                 subtitle: 'Sign out of your account',
                 onTap: () async {
                   Navigator.pop(sheetContext);
-
                   final confirmed = await _confirmLogout();
-
-                  if (confirmed != true) {
-                    return;
-                  }
-
+                  if (confirmed != true) return;
                   await authService.logout();
-
-                  if (!mounted) {
-                    return;
-                  }
+                  if (!mounted) return;
 
                   Navigator.of(context).pushAndRemoveUntil(
                     MaterialPageRoute(
@@ -955,11 +963,6 @@ class _HomeScreenState extends State<HomeScreen>
   Widget _buildReportTile(WasteReport report) {
     final Color statusColor = _getStatusColor(report.status);
 
-    final String displayStatus =
-        report.status == 'Completion Submitted'
-            ? 'Under Verification'
-            : report.status;
-
     return Container(
       padding: const EdgeInsets.all(15),
       decoration: BoxDecoration(
@@ -1006,7 +1009,7 @@ class _HomeScreenState extends State<HomeScreen>
               borderRadius: BorderRadius.circular(12),
             ),
             child: Text(
-              displayStatus,
+              report.status,
               style: TextStyle(
                 color: statusColor,
                 fontWeight: FontWeight.w700,
@@ -1043,8 +1046,6 @@ class _HomeScreenState extends State<HomeScreen>
         return Colors.deepPurple;
       case 'In Progress':
         return Colors.blue;
-      case 'Completion Submitted':
-        return Colors.amber.shade800;
       case 'Resolved':
         return Colors.green;
       case 'Rejected':

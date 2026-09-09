@@ -16,6 +16,17 @@ class CollectorApplication {
   final Timestamp? submittedAt;
   final Timestamp? reviewedAt;
 
+  final Timestamp? suspendedAt;
+  final String suspendedBy;
+  final String suspensionReason;
+
+  final Timestamp? reactivatedAt;
+  final String reactivatedBy;
+
+  final Timestamp? demotedAt;
+  final String demotedBy;
+  final String demotionReason;
+
   const CollectorApplication({
     required this.id,
     required this.userId,
@@ -31,13 +42,20 @@ class CollectorApplication {
     required this.assignedCollectionZoneIds,
     required this.submittedAt,
     required this.reviewedAt,
+    required this.suspendedAt,
+    required this.suspendedBy,
+    required this.suspensionReason,
+    required this.reactivatedAt,
+    required this.reactivatedBy,
+    required this.demotedAt,
+    required this.demotedBy,
+    required this.demotionReason,
   });
 
   factory CollectorApplication.fromDocument(
     DocumentSnapshot<Map<String, dynamic>> doc,
   ) {
     final data = doc.data() ?? <String, dynamic>{};
-
     final rawZones = data['assignedCollectionZoneIds'];
 
     return CollectorApplication(
@@ -65,12 +83,28 @@ class CollectorApplication {
       reviewedAt: data['reviewedAt'] is Timestamp
           ? data['reviewedAt'] as Timestamp
           : null,
+      suspendedAt: data['suspendedAt'] is Timestamp
+          ? data['suspendedAt'] as Timestamp
+          : null,
+      suspendedBy: data['suspendedBy']?.toString() ?? '',
+      suspensionReason: data['suspensionReason']?.toString() ?? '',
+      reactivatedAt: data['reactivatedAt'] is Timestamp
+          ? data['reactivatedAt'] as Timestamp
+          : null,
+      reactivatedBy: data['reactivatedBy']?.toString() ?? '',
+      demotedAt: data['demotedAt'] is Timestamp
+          ? data['demotedAt'] as Timestamp
+          : null,
+      demotedBy: data['demotedBy']?.toString() ?? '',
+      demotionReason: data['demotionReason']?.toString() ?? '',
     );
   }
 
   bool get isPending => status == 'pending';
   bool get isApproved => status == 'approved';
   bool get isRejected => status == 'rejected';
+  bool get isSuspended => status == 'suspended';
+  bool get isDemoted => status == 'demoted';
 
   String get statusDisplayName {
     switch (status) {
@@ -78,6 +112,10 @@ class CollectorApplication {
         return 'Approved';
       case 'rejected':
         return 'Rejected';
+      case 'suspended':
+        return 'Suspended';
+      case 'demoted':
+        return 'Demoted';
       case 'pending':
       default:
         return 'Pending';

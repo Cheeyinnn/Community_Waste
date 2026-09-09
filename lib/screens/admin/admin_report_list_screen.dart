@@ -8,11 +8,13 @@ import 'admin_report_detail_screen.dart';
 class AdminReportListScreen extends StatefulWidget {
   final String initialFilter;
   final String initialAreaFilter;
+  final bool initialHotspotWeeklyOnly;
 
   const AdminReportListScreen({
     super.key,
     this.initialFilter = 'All',
     this.initialAreaFilter = '',
+    this.initialHotspotWeeklyOnly = false,
   });
 
   @override
@@ -22,9 +24,21 @@ class AdminReportListScreen extends StatefulWidget {
 class _AdminReportListScreenState extends State<AdminReportListScreen> {
   final FirestoreService firestoreService = FirestoreService();
 
+  late final Stream<List<WasteReport>> _reportsStream;
+  final FocusNode _locationSearchFocusNode = FocusNode();
+
   late String _selectedFilter;
   late String _selectedAreaFilter;
+  late bool _hotspotWeeklyOnly;
   String _selectedPriorityFilter = 'All';
+
+  // Status + Priority live inside one compact filter panel.
+  // The panel is hidden when Manage Reports first opens.
+  bool _filtersExpanded = false;
+
+  final TextEditingController _locationSearchController =
+      TextEditingController();
+  String _locationSearchQuery = '';
 
   final List<String> _filters = [
     'All',
@@ -41,8 +55,16 @@ class _AdminReportListScreenState extends State<AdminReportListScreen> {
   @override
   void initState() {
     super.initState();
+    _reportsStream = firestoreService.getAllReports();
     _selectedFilter = widget.initialFilter;
     _selectedAreaFilter = widget.initialAreaFilter;
+    _hotspotWeeklyOnly = widget.initialHotspotWeeklyOnly;
+
+    // When Manage Reports is opened from a hotspot, show the hotspot area
+    // inside the search field as well. The Admin can edit it directly to
+    // leave hotspot mode and search another area/location manually.
+    _locationSearchQuery = widget.initialAreaFilter.trim();
+    _locationSearchController.text = _locationSearchQuery;
   }
 
   @override
@@ -50,12 +72,26 @@ class _AdminReportListScreenState extends State<AdminReportListScreen> {
     super.didUpdateWidget(oldWidget);
 
     if (oldWidget.initialFilter != widget.initialFilter ||
-        oldWidget.initialAreaFilter != widget.initialAreaFilter) {
+        oldWidget.initialAreaFilter != widget.initialAreaFilter ||
+        oldWidget.initialHotspotWeeklyOnly !=
+            widget.initialHotspotWeeklyOnly) {
       setState(() {
         _selectedFilter = widget.initialFilter;
         _selectedAreaFilter = widget.initialAreaFilter;
+        _hotspotWeeklyOnly = widget.initialHotspotWeeklyOnly;
+        _selectedPriorityFilter = 'All';
+        _filtersExpanded = false;
+        _locationSearchQuery = widget.initialAreaFilter.trim();
+        _locationSearchController.text = _locationSearchQuery;
       });
     }
+  }
+
+  @override
+  void dispose() {
+    _locationSearchController.dispose();
+    _locationSearchFocusNode.dispose();
+    super.dispose();
   }
 
   Color _statusColor(String status) {
@@ -90,6 +126,54 @@ class _AdminReportListScreenState extends State<AdminReportListScreen> {
     }
   }
 
+  bool _matchesLocationSearch(WasteReport report) {
+    final query = _locationSearchQuery.trim().toLowerCase();
+
+    if (query.isEmpty) {
+      return true;
+    }
+
+    final area = report.area.trim().toLowerCase();
+    final location = report.location.trim().toLowerCase();
+
+    return area.contains(query) || location.contains(query);
+  }
+
+  void _handleLocationSearchChanged(String value) {
+    final cleanValue = value.trim();
+
+    setState(() {
+      // A hotspot drill-down uses an exact area + last-7-days filter.
+      // As soon as Admin edits that area text, switch back to normal
+      // Manage Reports search so another location can be searched directly.
+      if (_selectedAreaFilter.trim().isNotEmpty &&
+          cleanValue.toLowerCase() !=
+              _selectedAreaFilter.trim().toLowerCase()) {
+        _selectedAreaFilter = '';
+        _hotspotWeeklyOnly = false;
+        _selectedPriorityFilter = 'All';
+      }
+
+      _locationSearchQuery = cleanValue;
+    });
+  }
+
+  void _clearLocationSearch() {
+    setState(() {
+      _selectedAreaFilter = '';
+      _hotspotWeeklyOnly = false;
+      _selectedPriorityFilter = 'All';
+      _locationSearchQuery = '';
+      _locationSearchController.clear();
+    });
+  }
+
+  bool _isWithinLast7Days(WasteReport report) {
+    final cutoff = DateTime.now().subtract(const Duration(days: 7));
+    final createdAt = report.createdAt.toDate();
+    return !createdAt.isBefore(cutoff);
+  }
+
   bool _isActiveHotspotReport(WasteReport report) {
     return report.status != 'Resolved' && report.status != 'Rejected';
   }
@@ -100,20 +184,30 @@ class _AdminReportListScreenState extends State<AdminReportListScreen> {
     return 'Low';
   }
 
-  int _activeCountForSelectedArea(List<WasteReport> allReports) {
+  int _countForSelectedArea(List<WasteReport> allReports) {
     if (_selectedAreaFilter.trim().isEmpty) {
       return 0;
     }
 
     return allReports.where((report) {
-      return report.area.trim() == _selectedAreaFilter.trim() &&
-          _isActiveHotspotReport(report);
+      final areaMatch =
+          report.area.trim() == _selectedAreaFilter.trim();
+
+      if (!areaMatch) {
+        return false;
+      }
+
+      if (_hotspotWeeklyOnly) {
+        return _isWithinLast7Days(report);
+      }
+
+      return _isActiveHotspotReport(report);
     }).length;
   }
 
-  String _areaPriorityFromActiveReports(List<WasteReport> allReports) {
-    final activeCount = _activeCountForSelectedArea(allReports);
-    return _autoPriorityFromCount(activeCount);
+  String _areaPriorityFromSelectedArea(List<WasteReport> allReports) {
+    final count = _countForSelectedArea(allReports);
+    return _autoPriorityFromCount(count);
   }
 
   String _displayPriorityForReport(
@@ -124,7 +218,7 @@ class _AdminReportListScreenState extends State<AdminReportListScreen> {
       return report.priority;
     }
 
-    return _areaPriorityFromActiveReports(allReports);
+    return _areaPriorityFromSelectedArea(allReports);
   }
 
   bool _matchSelectedPriority(
@@ -150,30 +244,119 @@ class _AdminReportListScreenState extends State<AdminReportListScreen> {
       }).length;
     }
 
-    final activeCount = areaReports.where(_isActiveHotspotReport).length;
-    final areaPriority = _autoPriorityFromCount(activeCount);
+    final areaCount = _hotspotWeeklyOnly
+        ? areaReports.length
+        : areaReports.where(_isActiveHotspotReport).length;
+    final areaPriority = _autoPriorityFromCount(areaCount);
 
     if (filter == 'All') {
-      return activeCount;
+      return areaCount;
     }
 
-    return areaPriority == filter ? activeCount : 0;
+    return areaPriority == filter ? areaCount : 0;
   }
 
   String _formatDate(DateTime dateTime) {
     return DateFormat('dd MMM, hh:mm a').format(dateTime);
   }
 
-  Widget _buildSectionLabel(String title) {
+  Widget _buildLocationSearchBar() {
+    final hasActiveFilters =
+        _selectedFilter != 'All' || _selectedPriorityFilter != 'All';
+
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 10, 20, 4),
-      child: Text(
-        title,
-        style: TextStyle(
-          color: Colors.grey.shade600,
-          fontWeight: FontWeight.w700,
-          fontSize: 12,
-          letterSpacing: 0.3,
+      padding: const EdgeInsets.fromLTRB(20, 10, 20, 7),
+      child: TextField(
+        controller: _locationSearchController,
+        focusNode: _locationSearchFocusNode,
+        onChanged: _handleLocationSearchChanged,
+        autocorrect: false,
+        enableSuggestions: false,
+        textInputAction: TextInputAction.search,
+        decoration: InputDecoration(
+          hintText: 'Search area or report location...',
+          prefixIcon: const Icon(
+            Icons.location_searching_rounded,
+            color: Colors.blue,
+          ),
+          suffixIconConstraints: const BoxConstraints(
+            minWidth: 50,
+            minHeight: 48,
+          ),
+          suffixIcon: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                tooltip: _filtersExpanded ? 'Hide filters' : 'Show filters',
+                onPressed: () {
+                  FocusScope.of(context).unfocus();
+                  setState(() {
+                    _filtersExpanded = !_filtersExpanded;
+                  });
+                },
+                icon: Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: _filtersExpanded || hasActiveFilters
+                        ? Colors.blue.shade50
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Center(
+                        child: Icon(
+                          Icons.tune_rounded,
+                          color: _filtersExpanded || hasActiveFilters
+                              ? Colors.blue.shade700
+                              : Colors.grey.shade600,
+                          size: 21,
+                        ),
+                      ),
+                      if (hasActiveFilters)
+                        Positioned(
+                          top: 4,
+                          right: 4,
+                          child: Container(
+                            width: 7,
+                            height: 7,
+                            decoration: const BoxDecoration(
+                              color: Colors.blue,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              if (_locationSearchQuery.isNotEmpty)
+                IconButton(
+                  tooltip: 'Clear location search',
+                  onPressed: _clearLocationSearch,
+                  icon: const Icon(Icons.close_rounded),
+                ),
+            ],
+          ),
+          filled: true,
+          fillColor: Colors.white,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 14,
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: BorderSide(color: Colors.blue.shade100),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: const BorderSide(
+              color: Colors.blue,
+              width: 1.8,
+            ),
+          ),
         ),
       ),
     );
@@ -184,8 +367,10 @@ class _AdminReportListScreenState extends State<AdminReportListScreen> {
       return const SizedBox.shrink();
     }
 
-    final activeCount = areaReports.where(_isActiveHotspotReport).length;
-    final areaPriority = _autoPriorityFromCount(activeCount);
+    final areaCount = _hotspotWeeklyOnly
+        ? areaReports.length
+        : areaReports.where(_isActiveHotspotReport).length;
+    final areaPriority = _autoPriorityFromCount(areaCount);
     final priorityColor = _priorityColor(areaPriority);
 
     return Container(
@@ -203,7 +388,8 @@ class _AdminReportListScreenState extends State<AdminReportListScreen> {
           Expanded(
             child: Text(
               'Showing reports from: $_selectedAreaFilter\n'
-              'Active reports: $activeCount • $areaPriority Area',
+              '${_hotspotWeeklyOnly ? 'Last 7 days' : 'Active reports'}: '
+              '$areaCount • $areaPriority Area',
               maxLines: 3,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
@@ -214,12 +400,7 @@ class _AdminReportListScreenState extends State<AdminReportListScreen> {
             ),
           ),
           TextButton(
-            onPressed: () {
-              setState(() {
-                _selectedAreaFilter = '';
-                _selectedPriorityFilter = 'All';
-              });
-            },
+            onPressed: _clearLocationSearch,
             child: const Text(
               'Clear',
               style: TextStyle(fontWeight: FontWeight.bold),
@@ -246,7 +427,7 @@ class _AdminReportListScreenState extends State<AdminReportListScreen> {
         foregroundColor: Colors.black87,
       ),
       body: StreamBuilder<List<WasteReport>>(
-        stream: firestoreService.getAllReports(),
+        stream: _reportsStream,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(
@@ -261,8 +442,16 @@ class _AdminReportListScreenState extends State<AdminReportListScreen> {
           final reports = snapshot.data ?? [];
 
           final areaFilteredReports = reports.where((report) {
-            return _selectedAreaFilter.trim().isEmpty ||
+            final searchMatch = _matchesLocationSearch(report);
+
+            final areaMatch = _selectedAreaFilter.trim().isEmpty ||
                 report.area.trim() == _selectedAreaFilter.trim();
+
+            final dateMatch = !_hotspotWeeklyOnly ||
+                _selectedAreaFilter.trim().isEmpty ||
+                _isWithinLast7Days(report);
+
+            return searchMatch && areaMatch && dateMatch;
           }).toList();
 
           final filteredReports =
@@ -271,13 +460,23 @@ class _AdminReportListScreenState extends State<AdminReportListScreen> {
                     _selectedFilter == 'All' ||
                     report.status == _selectedFilter;
 
+                final searchMatch = _matchesLocationSearch(report);
+
                 final areaMatch =
                     _selectedAreaFilter.trim().isEmpty ||
                     report.area.trim() == _selectedAreaFilter.trim();
 
+                final dateMatch = !_hotspotWeeklyOnly ||
+                    _selectedAreaFilter.trim().isEmpty ||
+                    _isWithinLast7Days(report);
+
                 final priorityMatch = _matchSelectedPriority(report, reports);
 
-                return statusMatch && areaMatch && priorityMatch;
+                return statusMatch &&
+                    searchMatch &&
+                    areaMatch &&
+                    dateMatch &&
+                    priorityMatch;
               }).toList()..sort((a, b) {
                 return b.createdAt.compareTo(a.createdAt);
               });
@@ -285,20 +484,20 @@ class _AdminReportListScreenState extends State<AdminReportListScreen> {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildSectionLabel('Status'),
-              _buildStatusFilterBar(areaFilteredReports),
-              _buildSectionLabel(
-                _selectedAreaFilter.isEmpty ? 'Priority' : 'Area Priority',
-              ),
-              _buildPriorityFilterBar(areaFilteredReports),
+              _buildLocationSearchBar(),
               _buildAreaFilterBanner(areaReports: areaFilteredReports),
+              _buildCombinedFilterPanel(areaFilteredReports),
               Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 20,
                   vertical: 8,
                 ),
                 child: Text(
-                  'Found ${filteredReports.length} results',
+                  _hotspotWeeklyOnly && _selectedAreaFilter.isNotEmpty
+                      ? 'Found ${filteredReports.length} reports in the last 7 days'
+                      : _locationSearchQuery.isNotEmpty
+                          ? 'Found ${filteredReports.length} reports matching "$_locationSearchQuery"'
+                          : 'Found ${filteredReports.length} results',
                   style: TextStyle(
                     color: Colors.grey.shade500,
                     fontWeight: FontWeight.w600,
@@ -310,9 +509,13 @@ class _AdminReportListScreenState extends State<AdminReportListScreen> {
                 child: filteredReports.isEmpty
                     ? _buildEmptyState()
                     : ListView.builder(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 8,
+                        keyboardDismissBehavior:
+                            ScrollViewKeyboardDismissBehavior.onDrag,
+                        padding: EdgeInsets.fromLTRB(
+                          16,
+                          8,
+                          16,
+                          115 + MediaQuery.of(context).padding.bottom,
                         ),
                         physics: const ClampingScrollPhysics(),
                         itemCount: filteredReports.length,
@@ -328,6 +531,159 @@ class _AdminReportListScreenState extends State<AdminReportListScreen> {
             ],
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildCombinedFilterPanel(List<WasteReport> reports) {
+    if (!_filtersExpanded) {
+      return const SizedBox.shrink();
+    }
+
+    final priorityTitle = _selectedAreaFilter.isEmpty
+        ? 'Priority'
+        : _hotspotWeeklyOnly
+            ? 'Weekly Hotspot Priority'
+            : 'Area Priority';
+
+    final hasActiveFilters =
+        _selectedFilter != 'All' || _selectedPriorityFilter != 'All';
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(20, 3, 20, 7),
+      padding: const EdgeInsets.fromLTRB(0, 12, 0, 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.blue.shade100),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.025),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.tune_rounded,
+                  color: Colors.blue.shade700,
+                  size: 20,
+                ),
+                const SizedBox(width: 9),
+                const Expanded(
+                  child: Text(
+                    'Filters',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.black87,
+                    ),
+                  ),
+                ),
+                if (hasActiveFilters)
+                  TextButton(
+                    onPressed: () {
+                      setState(() {
+                        _selectedFilter = 'All';
+                        _selectedPriorityFilter = 'All';
+                      });
+                    },
+                    child: const Text(
+                      'Reset',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                Text(
+                  'Status',
+                  style: TextStyle(
+                    color: Colors.grey.shade700,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                if (_selectedFilter != 'All')
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _statusColor(_selectedFilter).withOpacity(0.10),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      _selectedFilter,
+                      style: TextStyle(
+                        color: _statusColor(_selectedFilter),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          _buildStatusFilterBar(reports),
+          Divider(
+            height: 18,
+            indent: 16,
+            endIndent: 16,
+            color: Colors.grey.shade200,
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                Text(
+                  priorityTitle,
+                  style: TextStyle(
+                    color: Colors.grey.shade700,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                if (_selectedPriorityFilter != 'All')
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _priorityColor(_selectedPriorityFilter)
+                          .withOpacity(0.10),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      _selectedPriorityFilter,
+                      style: TextStyle(
+                        color: _priorityColor(_selectedPriorityFilter),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          _buildPriorityFilterBar(reports),
+        ],
       ),
     );
   }
@@ -407,8 +763,10 @@ class _AdminReportListScreenState extends State<AdminReportListScreen> {
           final label = _selectedAreaFilter.isEmpty
               ? '$filter ($count)'
               : filter == 'All'
-              ? 'Active ($count)'
-              : '$filter Area ($count)';
+                  ? _hotspotWeeklyOnly
+                      ? 'Reports ($count)'
+                      : 'Active ($count)'
+                  : '$filter Area ($count)';
 
           return Padding(
             padding: const EdgeInsets.only(right: 10, top: 4, bottom: 4),

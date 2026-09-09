@@ -308,8 +308,6 @@ class AdminDashboardScreen extends StatelessWidget {
         return Colors.deepPurple;
       case 'In Progress':
         return Colors.blue;
-      case 'Completion Submitted':
-        return Colors.amber.shade800;
       case 'Resolved':
         return Colors.green;
       case 'Rejected':
@@ -558,11 +556,6 @@ class AdminDashboardScreen extends StatelessWidget {
           }
 
           final allReports = snapshot.data ?? [];
-
-          final completionReviewCount = allReports
-              .where((report) => report.status == 'Completion Submitted')
-              .length;
-
           final recentReports = allReports.toList()
             ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
@@ -604,19 +597,10 @@ class AdminDashboardScreen extends StatelessWidget {
               const SizedBox(height: 16),
               _buildActionTile(
                 icon: Icons.list_alt_rounded,
-                color: Colors.orange,
+                color: Colors.blue,
                 title: 'Manage Reports',
                 subtitle: 'View, edit, assign, and monitor reports',
                 onTap: () => onNavigateToReports('All'),
-              ),
-              _buildActionTile(
-                icon: Icons.fact_check_outlined,
-                color: Colors.amber.shade800,
-                title: 'Completion Reviews',
-                subtitle: completionReviewCount == 0
-                    ? 'No collector completion proofs waiting for review'
-                    : '$completionReviewCount collector completion proof${completionReviewCount == 1 ? '' : 's'} waiting for review',
-                onTap: () => onNavigateToReports('Completion Submitted'),
               ),
               _buildActionTile(
                 icon: Icons.map_outlined,
@@ -708,6 +692,21 @@ class _DashboardSummarySectionState extends State<_DashboardSummarySection>
     return reports;
   }
 
+  // ============================================================
+  // HOTSPOT WINDOW
+  // ============================================================
+  // Hotspot detection always uses a rolling 7-day window.
+  // It is intentionally independent from the dashboard Overview Filter.
+  // This keeps hotspot priority consistent with the report-frequency logic.
+  List<WasteReport> _getWeeklyHotspotReports(List<WasteReport> reports) {
+    final cutoff = DateTime.now().subtract(const Duration(days: 7));
+
+    return reports.where((report) {
+      final createdAt = report.createdAt.toDate();
+      return !createdAt.isBefore(cutoff);
+    }).toList();
+  }
+
   Map<String, int> _getAreaCounts(List<WasteReport> reports) {
     final Map<String, int> areaCounts = {};
 
@@ -786,17 +785,6 @@ class _DashboardSummarySectionState extends State<_DashboardSummarySection>
         .toList();
   }
 
-  String _rangeLabel() {
-    switch (_selectedRange) {
-      case 'Last 7 Days':
-        return 'in the last 7 days';
-      case 'This Month':
-        return 'this month';
-      default:
-        return 'overall';
-    }
-  }
-
   Widget _buildOverviewFilterCard() {
     return Container(
       width: double.infinity,
@@ -863,7 +851,16 @@ class _DashboardSummarySectionState extends State<_DashboardSummarySection>
             child: DropdownButtonHideUnderline(
               child: DropdownButton<String>(
                 value: _selectedRange,
-                icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                icon: const Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  color: Colors.blue,
+                ),
+                style: TextStyle(
+                  color: Colors.blue.shade800,
+                  fontWeight: FontWeight.w700,
+                ),
+                dropdownColor: Colors.white,
+                focusColor: Colors.transparent,
                 borderRadius: BorderRadius.circular(14),
                 items: const [
                   DropdownMenuItem(value: 'Overall', child: Text('Overall')),
@@ -880,7 +877,6 @@ class _DashboardSummarySectionState extends State<_DashboardSummarySection>
                   if (value != null) {
                     setState(() {
                       _selectedRange = value;
-                      _selectedHotspotPriority = 'All';
                     });
                   }
                 },
@@ -983,7 +979,7 @@ class _DashboardSummarySectionState extends State<_DashboardSummarySection>
           const SizedBox(width: 14),
           Expanded(
             child: Text(
-              'Hotspot Summary ${_rangeLabel()}: $highCount High, $mediumCount Medium, $lowCount Low area(s)',
+              'Hotspot Summary (Last 7 Days): $highCount High, $mediumCount Medium, $lowCount Low area(s)',
               style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
             ),
           ),
@@ -1062,7 +1058,7 @@ class _DashboardSummarySectionState extends State<_DashboardSummarySection>
           ),
           const SizedBox(height: 6),
           Text(
-            'Tap an area to view matching reports. Priority is calculated from repeated reports by area ${_rangeLabel()}.',
+            'Tap an area to view matching reports. Hotspot priority is calculated from reports submitted in the last 7 days.',
             style: TextStyle(
               color: Colors.grey.shade600,
               fontSize: 12,
@@ -1192,14 +1188,19 @@ class _DashboardSummarySectionState extends State<_DashboardSummarySection>
   Widget build(BuildContext context) {
     super.build(context);
 
+    // Overview cards follow the selected Overview Filter.
     final reports = _filterReportsByRange(widget.reports);
+
+    // Hotspot data always follows a rolling 7-day window, regardless of
+    // whether the Overview Filter is set to Overall, Last 7 Days, or Month.
+    final weeklyHotspotReports = _getWeeklyHotspotReports(widget.reports);
 
     final total = reports.length;
     final pending = reports.where((r) => r.status == 'Pending').length;
     final inProgress = reports.where((r) => r.status == 'In Progress').length;
     final resolved = reports.where((r) => r.status == 'Resolved').length;
 
-    final hotspotAreas = _getFilteredHotspotAreas(reports);
+    final hotspotAreas = _getFilteredHotspotAreas(weeklyHotspotReports);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1246,7 +1247,7 @@ class _DashboardSummarySectionState extends State<_DashboardSummarySection>
           ],
         ),
         const SizedBox(height: 16),
-        _buildHotspotSummaryCard(reports),
+        _buildHotspotSummaryCard(weeklyHotspotReports),
         const SizedBox(height: 20),
         _buildHotspotAreasCard(hotspotAreas),
       ],

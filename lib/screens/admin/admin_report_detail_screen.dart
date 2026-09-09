@@ -6,6 +6,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../models/waste_report.dart';
 import '../../services/firestore_service.dart';
 import '../../services/collection_schedule_service.dart';
+import '../../services/report_chat_service.dart';
+import '../shared/report_chat_screen.dart';
 
 class AdminReportDetailScreen extends StatefulWidget {
   final WasteReport report;
@@ -26,6 +28,7 @@ class _AdminReportDetailScreenState extends State<AdminReportDetailScreen> {
   final FirestoreService _firestoreService = FirestoreService();
   final CollectionScheduleService _scheduleService =
       CollectionScheduleService();
+  final ReportChatService _chatService = ReportChatService();
   final TextEditingController _adminRemarkController = TextEditingController();
 
   late String _selectedStatus;
@@ -1141,6 +1144,274 @@ class _AdminReportDetailScreenState extends State<AdminReportDetailScreen> {
     }
   }
 
+  void _openAdminCollectorChat(WasteReport report) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ReportChatScreen(
+          reportId: report.id,
+          reportTitle: report.title,
+          reportLocation: report.location,
+          reportLatitude: report.latitude,
+          reportLongitude: report.longitude,
+          currentRole: 'admin',
+          channel: ReportChatChannel.adminCollector,
+        ),
+      ),
+    );
+  }
+
+  void _openUserCollectorConversation(WasteReport report) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ReportChatScreen(
+          reportId: report.id,
+          reportTitle: report.title,
+          reportLocation: report.location,
+          reportLatitude: report.latitude,
+          reportLongitude: report.longitude,
+          currentRole: 'admin',
+          channel: ReportChatChannel.userCollector,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCommunicationSection() {
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('reports')
+          .doc(widget.report.id)
+          .snapshots(),
+      builder: (context, snapshot) {
+        final data = snapshot.data?.data();
+
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            data == null) {
+          return Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(24),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.all(
+                Radius.circular(20),
+              ),
+            ),
+            child: const Center(
+              child: CircularProgressIndicator(
+                color: Colors.blue,
+              ),
+            ),
+          );
+        }
+
+        final report = data != null
+            ? WasteReport.fromMap(data, widget.report.id)
+            : widget.report;
+
+        if (report.collectorId.trim().isEmpty) {
+          return Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.blue.shade100),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(13),
+                  ),
+                  child: const Icon(
+                    Icons.forum_outlined,
+                    color: Colors.blue,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Communication becomes available after a Collector is assigned to this report.',
+                    style: TextStyle(
+                      color: Colors.grey.shade700,
+                      fontSize: 12.5,
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final isReadOnly = report.status == 'Resolved';
+
+        return Column(
+          children: [
+            StreamBuilder<int>(
+              stream: _chatService.watchUnreadCount(
+                report.id,
+                channel: ReportChatChannel.adminCollector,
+              ),
+              builder: (context, unreadSnapshot) {
+                final unread = unreadSnapshot.data ?? 0;
+
+                return _buildCommunicationCard(
+                  icon: Icons.admin_panel_settings_outlined,
+                  iconColor: Colors.blue,
+                  title: report.collectorName.trim().isEmpty
+                      ? 'Admin ↔ Collector'
+                      : 'Chat with ${report.collectorName}',
+                  subtitle: isReadOnly
+                      ? 'View the completed operational conversation.'
+                      : 'Send task instructions or discuss completion and operational matters.',
+                  buttonLabel: isReadOnly
+                      ? 'View Admin Conversation'
+                      : unread > 0
+                          ? 'Open Admin Chat ($unread new)'
+                          : 'Open Admin Chat',
+                  unreadCount: unread,
+                  onTap: () => _openAdminCollectorChat(report),
+                );
+              },
+            ),
+            const SizedBox(height: 12),
+            _buildCommunicationCard(
+              icon: Icons.visibility_outlined,
+              iconColor: const Color(0xFF35C76F),
+              title: 'User ↔ Collector Conversation',
+              subtitle:
+                  'View the report-specific User and Collector discussion. Admin access is read-only.',
+              buttonLabel: 'View Conversation',
+              unreadCount: 0,
+              onTap: () => _openUserCollectorConversation(report),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildCommunicationCard({
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String subtitle,
+    required String buttonLabel,
+    required int unreadCount,
+    required VoidCallback onTap,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: iconColor.withOpacity(0.20)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: iconColor.withOpacity(0.10),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(icon, color: iconColor),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontSize: 12.5,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: onTap,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(vertical: 13),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+              icon: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Icon(icon),
+                  if (unreadCount > 0)
+                    Positioned(
+                      right: -8,
+                      top: -7,
+                      child: Container(
+                        constraints: const BoxConstraints(
+                          minWidth: 18,
+                          minHeight: 18,
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.red,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.white, width: 2),
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          unreadCount > 99 ? '99+' : '$unreadCount',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              label: Text(
+                buttonLabel,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final currentStatusColor = _getStatusColor(_selectedStatus);
@@ -1173,6 +1444,9 @@ class _AdminReportDetailScreenState extends State<AdminReportDetailScreen> {
               _buildImageContainer(widget.report.imageUrl),
               const SizedBox(height: 24),
               _buildInfoCard(),
+              const SizedBox(height: 24),
+              _buildSectionTitle("Communication"),
+              _buildCommunicationSection(),
               const SizedBox(height: 24),
               _buildSectionTitle("Completion Review"),
               _buildCompletionReviewSection(),
@@ -1581,37 +1855,24 @@ class _AdminReportDetailScreenState extends State<AdminReportDetailScreen> {
               }
 
               if (_reportZoneId.isEmpty) {
-                return InputDecorator(
-                  isEmpty: false,
-                  isFocused: false,
+                return DropdownButtonFormField<String>(
+                  value: null,
                   decoration: InputDecoration(
                     labelText: "Assign Collector",
-                    enabled: false,
                     border: OutlineInputBorder(
                       borderRadius:
                           BorderRadius.circular(12),
-                    ),
-                    disabledBorder: OutlineInputBorder(
-                      borderRadius:
-                          BorderRadius.circular(12),
-                      borderSide: BorderSide(
-                        color: Colors.grey.shade400,
-                      ),
                     ),
                     prefixIcon: const Icon(
                       Icons.delivery_dining_rounded,
                       color: Colors.grey,
                     ),
                   ),
-                  child: Text(
+                  hint: const Text(
                     'Report zone must be identified first',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: Colors.grey.shade600,
-                      fontSize: 14,
-                    ),
                   ),
+                  items: const [],
+                  onChanged: null,
                 );
               }
 
@@ -1620,37 +1881,24 @@ class _AdminReportDetailScreenState extends State<AdminReportDetailScreen> {
                   crossAxisAlignment:
                       CrossAxisAlignment.start,
                   children: [
-                    InputDecorator(
-                      isEmpty: false,
-                      isFocused: false,
+                    DropdownButtonFormField<String>(
+                      value: null,
                       decoration: InputDecoration(
                         labelText: "Assign Collector",
-                        enabled: false,
                         border: OutlineInputBorder(
                           borderRadius:
                               BorderRadius.circular(12),
-                        ),
-                        disabledBorder: OutlineInputBorder(
-                          borderRadius:
-                              BorderRadius.circular(12),
-                          borderSide: BorderSide(
-                            color: Colors.grey.shade400,
-                          ),
                         ),
                         prefixIcon: const Icon(
                           Icons.delivery_dining_rounded,
                           color: Colors.grey,
                         ),
                       ),
-                      child: Text(
+                      hint: const Text(
                         'No collector available for this zone',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: Colors.grey.shade600,
-                          fontSize: 14,
-                        ),
                       ),
+                      items: const [],
+                      onChanged: null,
                     ),
                     const SizedBox(height: 8),
                     Text(

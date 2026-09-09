@@ -4,7 +4,7 @@ import 'package:community_waste_app/screens/collector/collector_main_screen.dart
 
 import '../../services/auth_service.dart';
 import '../admin/admin_main_screen.dart';
-import '../user/user_main.dart';
+import '../user/user_access_gate.dart';
 import 'register_screen.dart';
 import 'verify_email_screen.dart';
 
@@ -60,12 +60,16 @@ class _LoginScreenState extends State<LoginScreen> {
         return;
       }
 
+      // Firestore is the source of truth for the account role.
       final role = await _authService.getUserRole(user.uid);
 
       if (!mounted) return;
 
       // ==========================================================
       // EMAIL VERIFICATION
+      //
+      // Existing accounts without emailVerificationRequired are
+      // still allowed to continue normally.
       // ==========================================================
 
       final verificationRequired =
@@ -100,23 +104,65 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (!mounted) return;
 
-      // ==========================================================
-      // READ CURRENT USER ROLE / COLLECTOR APPROVAL STATE
-      //
-      // We read this BEFORE routing anywhere so an approved user
-      // cannot accidentally skip the approval message.
-      // ==========================================================
-
+      // Read the Firestore account record before any role routing so
+      // a suspended normal User cannot enter the application.
       final userRef = FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid);
 
-      final userDoc = await userRef.get();
-      final userData = userDoc.data() ?? <String, dynamic>{};
+      Map<String, dynamic> userData = <String, dynamic>{};
+
+      try {
+        final userDoc = await userRef.get();
+        userData = userDoc.data() ?? <String, dynamic>{};
+      } catch (_) {
+        // Keep the existing login error handling if Firestore cannot
+        // be read. Role routing still uses the value already obtained.
+      }
 
       if (!mounted) return;
 
+      final accountStatus =
+          userData['accountStatus']
+                  ?.toString()
+                  .trim()
+                  .toLowerCase() ??
+              'active';
+
+      if (accountStatus == 'suspended' && role != 'admin') {
+        final reason =
+            userData['accountSuspensionReason']?.toString().trim() ?? '';
+
+        await _authService.logout();
+
+        if (!mounted) return;
+
+        await _showAccountSuspendedDialog(reason: reason);
+        return;
+      }
+
       final selectedRole = _selectedRoleValue;
+
+      // Correct login tab -> enter normally.
+      if (selectedRole == role) {
+        _navigateToRole(role);
+        return;
+      }
+
+      // ==========================================================
+      // WRONG LOGIN TAB
+      //
+      // Special one-time case:
+      // A normal user applied to become a collector, the admin
+      // approved the application while the user was logged out,
+      // and the user returned using User Login.
+      //
+      // First time:
+      //   User Login -> approval message -> Continue as Collector
+      //
+      // Future attempts:
+      //   User Login -> blocked -> switch to Collector Login
+      // ==========================================================
 
       final applicationStatus =
           userData['collectorApplicationStatus']
@@ -125,65 +171,30 @@ class _LoginScreenState extends State<LoginScreen> {
                   .toLowerCase() ??
               '';
 
-      final rawZones =
-          userData['assignedCollectionZoneIds'];
-
-      final assignedZones = rawZones is Iterable
-          ? rawZones
-              .map((item) => item.toString().trim())
-              .where((item) => item.isNotEmpty)
-              .toList()
-          : <String>[];
-
-      final approvedAt =
-          userData['collectorApprovedAt'] is Timestamp
-              ? userData['collectorApprovedAt'] as Timestamp
-              : null;
-
-      final acknowledgedAt =
-          userData['collectorApprovalAcknowledgedAt'] is Timestamp
-              ? userData['collectorApprovalAcknowledgedAt']
-                  as Timestamp
-              : null;
-
-      final acknowledgedFlag =
+      final approvalAcknowledged =
           userData['collectorApprovalAcknowledged'] == true;
 
-      // A collector approval is considered acknowledged only when
-      // the acknowledgement belongs to the CURRENT approval.
-      //
-      // This also fixes repeated testing with the same account:
-      // if an old acknowledgement exists but admin approved again
-      // later, the new approval message will appear again.
-      final bool currentApprovalAcknowledged;
-
-      if (!acknowledgedFlag) {
-        currentApprovalAcknowledged = false;
-      } else if (approvedAt == null) {
-        currentApprovalAcknowledged = true;
-      } else if (acknowledgedAt == null) {
-        currentApprovalAcknowledged = false;
-      } else {
-        currentApprovalAcknowledged =
-            !acknowledgedAt.toDate().isBefore(
-                  approvedAt.toDate(),
-                );
-      }
-
-      final bool isApprovedCollector =
+      final bool approvedCollectorUsingUserLogin =
+          selectedRole == 'user' &&
           role == 'collector' &&
           applicationStatus == 'approved';
 
-      // ==========================================================
-      // ONE-TIME APPROVAL NOTICE
-      //
-      // Show this before ANY normal navigation.
-      // It appears whether the person selected User or Collector,
-      // so they cannot miss the fact that their role changed.
-      // ==========================================================
+      // ----------------------------------------------------------
+      // FIRST USER-LOGIN ATTEMPT AFTER COLLECTOR APPROVAL
+      // ----------------------------------------------------------
 
-      if (isApprovedCollector &&
-          !currentApprovalAcknowledged) {
+      if (approvedCollectorUsingUserLogin &&
+          !approvalAcknowledged) {
+        final rawZones =
+            userData['assignedCollectionZoneIds'];
+
+        final assignedZones = rawZones is Iterable
+            ? rawZones
+                .map((item) => item.toString().trim())
+                .where((item) => item.isNotEmpty)
+                .toList()
+            : <String>[];
+
         final continueAsCollector =
             await _showCollectorApprovalDialog(
           assignedZones: assignedZones,
@@ -192,6 +203,9 @@ class _LoginScreenState extends State<LoginScreen> {
         if (!mounted) return;
 
         if (continueAsCollector == true) {
+          // Mark that the user has now seen and acknowledged the
+          // role change. From the next login onward, User Login
+          // will no longer be accepted for this collector account.
           await userRef.set(
             {
               'collectorApprovalAcknowledged': true,
@@ -211,19 +225,17 @@ class _LoginScreenState extends State<LoginScreen> {
         return;
       }
 
-      // ==========================================================
-      // AFTER APPROVAL HAS ALREADY BEEN ACKNOWLEDGED
-      //
-      // A collector is no longer allowed to use User Login.
-      // Do NOT automatically jump them into Collector anymore.
-      // ==========================================================
+      // ----------------------------------------------------------
+      // COLLECTOR TRIES USER LOGIN AGAIN AFTER ACKNOWLEDGEMENT
+      // ----------------------------------------------------------
 
-      if (isApprovedCollector &&
-          currentApprovalAcknowledged &&
-          selectedRole == 'user') {
+      if (approvedCollectorUsingUserLogin &&
+          approvalAcknowledged) {
         final switchToCollector =
             await _showCollectorMustUseCollectorLoginDialog();
 
+        // Sign out because Firebase Authentication already
+        // succeeded before we discovered the wrong login tab.
         await _authService.logout();
 
         if (!mounted) return;
@@ -237,18 +249,9 @@ class _LoginScreenState extends State<LoginScreen> {
         return;
       }
 
-      // ==========================================================
-      // CORRECT LOGIN TAB
-      // ==========================================================
-
-      if (selectedRole == role) {
-        _navigateToRole(role);
-        return;
-      }
-
-      // ==========================================================
-      // OTHER WRONG LOGIN TABS
-      // ==========================================================
+      // ----------------------------------------------------------
+      // OTHER WRONG ROLE SELECTIONS
+      // ----------------------------------------------------------
 
       final switchToCorrectRole =
           await _showWrongRoleDialog(
@@ -579,6 +582,44 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   // ============================================================
+  // ACCOUNT SUSPENDED MESSAGE
+  // ============================================================
+
+  Future<void> _showAccountSuspendedDialog({
+    required String reason,
+  }) async {
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(22),
+          ),
+          title: const Text(
+            'Account Suspended',
+            style: TextStyle(fontWeight: FontWeight.w800),
+          ),
+          content: Text(
+            reason.trim().isEmpty
+                ? 'Your account has been suspended by the administrator. '
+                    'Please contact the administrator if you need further assistance.'
+                : 'Your account has been suspended by the administrator.\n\n'
+                    'Reason: ${reason.trim()}',
+            style: const TextStyle(height: 1.4),
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // ============================================================
   // OTHER WRONG ROLE MESSAGE
   // ============================================================
 
@@ -608,6 +649,22 @@ class _LoginScreenState extends State<LoginScreen> {
       message =
           'Your collector application was not approved. '
           'Your account is still registered as a User.';
+    } else if (selectedRole == 'collector' &&
+        actualRole == 'user' &&
+        applicationStatus == 'suspended') {
+      title = 'Collector Access Suspended';
+      message =
+          'Your Collector access is temporarily suspended. '
+          'Please continue using User Login until an administrator '
+          'reactivates your Collector access.';
+    } else if (selectedRole == 'collector' &&
+        actualRole == 'user' &&
+        applicationStatus == 'demoted') {
+      title = 'Collector Role Ended';
+      message =
+          'Your Collector role has been returned to a normal User account. '
+          'Please continue using User Login. You may submit a new Collector '
+          'application in the future if you want to become a Collector again.';
     }
 
     final color = _colorForRole(actualRole);
@@ -725,7 +782,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
       case 'user':
       default:
-        destination = const UserMain();
+        destination = const UserAccessGate();
         break;
     }
 

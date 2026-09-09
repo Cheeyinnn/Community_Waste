@@ -9,6 +9,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../models/waste_report.dart';
 import '../../services/firestore_service.dart';
 import '../../services/storage_service.dart';
+import '../../services/report_chat_service.dart';
+import '../shared/report_chat_screen.dart';
 
 class CollectorReportDetailScreen extends StatefulWidget {
   final WasteReport report;
@@ -25,8 +27,11 @@ class CollectorReportDetailScreen extends StatefulWidget {
 
 class _CollectorReportDetailScreenState
     extends State<CollectorReportDetailScreen> {
+  static const Color _collectorPrimary = Color(0xFFFFB547);
+
   final FirestoreService _firestoreService = FirestoreService();
   final StorageService _storageService = StorageService();
+  final ReportChatService _chatService = ReportChatService();
 
   void _goBackToTaskList() {
     Navigator.pop(context);
@@ -152,9 +157,9 @@ class _CollectorReportDetailScreenState
                       ),
                     ),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.blueGrey,
-                      side: BorderSide(
-                        color: Colors.grey.shade300,
+                      foregroundColor: _collectorPrimary,
+                      side: const BorderSide(
+                        color: _collectorPrimary,
                       ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(16),
@@ -222,7 +227,7 @@ class _CollectorReportDetailScreenState
                       ),
                     ),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.orange,
+                      backgroundColor: _collectorPrimary,
                       foregroundColor: Colors.white,
                       elevation: 0,
                       shape: RoundedRectangleBorder(
@@ -308,8 +313,6 @@ class _CollectorReportDetailScreenState
             final bool isSubmittingCompletion =
                 selectedAction == 'Submit Completion';
 
-            final Color selectedColor =
-                _statusColor(selectedAction);
 
             return Container(
               padding: EdgeInsets.only(
@@ -468,7 +471,7 @@ class _CollectorReportDetailScreenState
                           borderRadius:
                               BorderRadius.circular(16),
                           borderSide: BorderSide(
-                            color: Colors.orange.shade400,
+                            color: _collectorPrimary,
                             width: 2,
                           ),
                         ),
@@ -552,7 +555,7 @@ class _CollectorReportDetailScreenState
                       height: 55,
                       child: ElevatedButton(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: selectedColor,
+                          backgroundColor: _collectorPrimary,
                           foregroundColor: Colors.white,
                           shape: RoundedRectangleBorder(
                             borderRadius:
@@ -692,6 +695,333 @@ class _CollectorReportDetailScreenState
     );
   }
 
+  Future<void> _showImagePreview({
+    required String imageUrl,
+    required String title,
+  }) async {
+    await showDialog<void>(
+      context: context,
+      barrierColor: Colors.black87,
+      builder: (dialogContext) {
+        return Dialog(
+          insetPadding: const EdgeInsets.all(12),
+          backgroundColor: Colors.black,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: InteractiveViewer(
+                    minScale: 0.8,
+                    maxScale: 4,
+                    child: Center(
+                      child: Image.network(
+                        imageUrl,
+                        fit: BoxFit.contain,
+                        loadingBuilder: (
+                          context,
+                          child,
+                          loadingProgress,
+                        ) {
+                          if (loadingProgress == null) return child;
+                          return const Center(
+                            child: CircularProgressIndicator(
+                              color: _collectorPrimary,
+                            ),
+                          );
+                        },
+                        errorBuilder: (_, __, ___) => const Center(
+                          child: Icon(
+                            Icons.broken_image_outlined,
+                            color: Colors.white70,
+                            size: 64,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 12,
+                left: 14,
+                right: 58,
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 4,
+                right: 4,
+                child: IconButton(
+                  tooltip: 'Close',
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  icon: const Icon(
+                    Icons.close_rounded,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildEvidenceImage({
+    required String imageUrl,
+    required String previewTitle,
+    Color? borderColor,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => _showImagePreview(
+          imageUrl: imageUrl,
+          title: previewTitle,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: Colors.grey.shade100,
+            borderRadius: BorderRadius.circular(20),
+            border: borderColor == null
+                ? Border.all(color: Colors.orange.shade100)
+                : Border.all(color: borderColor, width: 2),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(18),
+            child: AspectRatio(
+              aspectRatio: 16 / 9,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Image.network(
+                    imageUrl,
+                    fit: BoxFit.cover,
+                    loadingBuilder: (
+                      context,
+                      child,
+                      loadingProgress,
+                    ) {
+                      if (loadingProgress == null) return child;
+                      return const Center(
+                        child: CircularProgressIndicator(
+                          color: _collectorPrimary,
+                        ),
+                      );
+                    },
+                    errorBuilder: (_, __, ___) => Icon(
+                      Icons.broken_image_outlined,
+                      size: 56,
+                      color: Colors.grey.shade400,
+                    ),
+                  ),
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 9,
+                      ),
+                      color: Colors.black54,
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.zoom_in_rounded,
+                            size: 18,
+                            color: Colors.white,
+                          ),
+                          SizedBox(width: 6),
+                          Text(
+                            'Tap photo to view',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTaskProgress({
+    required String status,
+  }) {
+    const stages = [
+      'Assigned',
+      'In Progress',
+      'Admin Review',
+      'Resolved',
+    ];
+
+    int currentStage;
+    switch (status) {
+      case 'Resolved':
+        currentStage = 3;
+        break;
+      case 'Completion Submitted':
+        currentStage = 2;
+        break;
+      case 'In Progress':
+        currentStage = 1;
+        break;
+      case 'Assigned':
+      default:
+        currentStage = 0;
+        break;
+    }
+
+    Color activeColorFor(int index) {
+      if (index == 2 && currentStage == 2) return Colors.amber.shade800;
+      if (index == 3 && currentStage == 3) return Colors.green;
+      return _collectorPrimary;
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.orange.shade100),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(
+                Icons.route_rounded,
+                color: _collectorPrimary,
+                size: 21,
+              ),
+              SizedBox(width: 8),
+              Text(
+                'Task Progress',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.black87,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          for (int i = 0; i < stages.length; i++) ...[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: 28,
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 24,
+                        height: 24,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: i <= currentStage
+                              ? activeColorFor(i)
+                              : Colors.grey.shade200,
+                        ),
+                        child: Icon(
+                          i < currentStage
+                              ? Icons.check_rounded
+                              : i == currentStage
+                                  ? Icons.circle
+                                  : Icons.circle_outlined,
+                          size: i == currentStage ? 9 : 15,
+                          color: i <= currentStage
+                              ? Colors.white
+                              : Colors.grey.shade400,
+                        ),
+                      ),
+                      if (i != stages.length - 1)
+                        Container(
+                          width: 2,
+                          height: 22,
+                          color: i < currentStage
+                              ? _collectorPrimary.withOpacity(0.55)
+                              : Colors.grey.shade200,
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            stages[i],
+                            style: TextStyle(
+                              fontWeight: i == currentStage
+                                  ? FontWeight.w800
+                                  : FontWeight.w600,
+                              color: i <= currentStage
+                                  ? Colors.black87
+                                  : Colors.grey.shade500,
+                            ),
+                          ),
+                        ),
+                        if (i == currentStage)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: activeColorFor(i).withOpacity(0.10),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              'Current',
+                              style: TextStyle(
+                                color: activeColorFor(i),
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildInfoTile({
     required IconData icon,
     required String label,
@@ -718,7 +1048,7 @@ class _CollectorReportDetailScreenState
             ),
             child: Icon(
               icon,
-              color: Colors.orange,
+              color: _collectorPrimary,
             ),
           ),
           const SizedBox(width: 14),
@@ -918,6 +1248,337 @@ class _CollectorReportDetailScreenState
     return const SizedBox.shrink();
   }
 
+  void _openReportChat(WasteReport report) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ReportChatScreen(
+          reportId: report.id,
+          reportTitle: report.title,
+          reportLocation: report.location,
+          reportLatitude: report.latitude,
+          reportLongitude: report.longitude,
+          currentRole: 'collector',
+        ),
+      ),
+    );
+  }
+
+  Widget _buildReportChatSection(WasteReport report) {
+    final showChat = report.userId.trim().isNotEmpty &&
+        (report.status == 'Assigned' ||
+            report.status == 'In Progress' ||
+            report.status == 'Completion Submitted' ||
+            report.status == 'Resolved');
+
+    if (!showChat) {
+      return const SizedBox.shrink();
+    }
+
+    final isReadOnly = report.status == 'Resolved';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: _collectorPrimary.withOpacity(0.28),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: _collectorPrimary.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.forum_outlined,
+                  color: _collectorPrimary,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      report.userName.trim().isEmpty
+                          ? 'Chat with User'
+                          : 'Chat with ${report.userName}',
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      isReadOnly
+                          ? 'The completed report conversation remains available for reference.'
+                          : 'Ask the reporting User about the exact waste location, access point, or other details before completing the task.',
+                      style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontSize: 12.5,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          StreamBuilder<int>(
+            stream: _chatService.watchUnreadCount(report.id),
+            builder: (context, unreadSnapshot) {
+              final unread = unreadSnapshot.data ?? 0;
+
+              return SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () => _openReportChat(report),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _collectorPrimary,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  icon: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Icon(
+                        isReadOnly
+                            ? Icons.history_rounded
+                            : Icons.forum_rounded,
+                      ),
+                      if (unread > 0)
+                        Positioned(
+                          right: -8,
+                          top: -7,
+                          child: Container(
+                            constraints: const BoxConstraints(
+                              minWidth: 18,
+                              minHeight: 18,
+                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.red,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: Colors.white,
+                                width: 2,
+                              ),
+                            ),
+                            alignment: Alignment.center,
+                            child: Text(
+                              unread > 99 ? '99+' : '$unread',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 9,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  label: Text(
+                    isReadOnly
+                        ? 'View Conversation'
+                        : unread > 0
+                            ? 'Open Chat ($unread new)'
+                            : 'Open Chat',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openAdminCollectorChat(WasteReport report) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ReportChatScreen(
+          reportId: report.id,
+          reportTitle: report.title,
+          reportLocation: report.location,
+          reportLatitude: report.latitude,
+          reportLongitude: report.longitude,
+          currentRole: 'collector',
+          channel: ReportChatChannel.adminCollector,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAdminCollectorChatSection(WasteReport report) {
+    final showChat = report.collectorId.trim().isNotEmpty &&
+        (report.status == 'Assigned' ||
+            report.status == 'In Progress' ||
+            report.status == 'Completion Submitted' ||
+            report.status == 'Resolved');
+
+    if (!showChat) {
+      return const SizedBox.shrink();
+    }
+
+    final isReadOnly = report.status == 'Resolved';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: Colors.blue.withOpacity(0.22),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.10),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.admin_panel_settings_outlined,
+                  color: Colors.blue,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Chat with Admin',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      isReadOnly
+                          ? 'The operational conversation remains available for reference.'
+                          : 'Ask Admin about task instructions, completion review, or other operational matters.',
+                      style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontSize: 12.5,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          StreamBuilder<int>(
+            stream: _chatService.watchUnreadCount(
+              report.id,
+              channel: ReportChatChannel.adminCollector,
+            ),
+            builder: (context, unreadSnapshot) {
+              final unread = unreadSnapshot.data ?? 0;
+
+              return SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () => _openAdminCollectorChat(report),
+                  style: ElevatedButton.styleFrom(
+                    // Collector actions always use the Collector role colour.
+                    backgroundColor: _collectorPrimary,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  icon: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Icon(
+                        isReadOnly
+                            ? Icons.history_rounded
+                            : Icons.admin_panel_settings_outlined,
+                      ),
+                      if (unread > 0)
+                        Positioned(
+                          right: -8,
+                          top: -7,
+                          child: Container(
+                            constraints: const BoxConstraints(
+                              minWidth: 18,
+                              minHeight: 18,
+                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.red,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: Colors.white,
+                                width: 2,
+                              ),
+                            ),
+                            alignment: Alignment.center,
+                            child: Text(
+                              unread > 99 ? '99+' : '$unread',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 9,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  label: Text(
+                    isReadOnly
+                        ? 'View Admin Conversation'
+                        : unread > 0
+                            ? 'Open Admin Chat ($unread new)'
+                            : 'Open Admin Chat',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
   String _completionProofTitle({
     required String status,
     required String verificationStatus,
@@ -985,7 +1646,7 @@ class _CollectorReportDetailScreenState
           onWillPop: _onWillPop,
           child: Scaffold(
             backgroundColor:
-                const Color(0xFFF7F9FC),
+                const Color(0xFFFFFAF4),
             appBar: AppBar(
               leading: IconButton(
                 icon: const Icon(
@@ -1010,7 +1671,7 @@ class _CollectorReportDetailScreenState
                 16,
                 8,
                 16,
-                24,
+                112,
               ),
               child: Column(
                 crossAxisAlignment:
@@ -1043,44 +1704,22 @@ class _CollectorReportDetailScreenState
                         ),
                       ),
                     ),
-                  if (report.imageUrl.isNotEmpty)
-                    Container(
-                      width: double.infinity,
-                      height: 220,
-                      decoration: BoxDecoration(
-                        borderRadius:
-                            BorderRadius.circular(
-                          24,
-                        ),
-                        color:
-                            Colors.grey.shade200,
-                      ),
-                      child: ClipRRect(
-                        borderRadius:
-                            BorderRadius.circular(
-                          24,
-                        ),
-                        child: Image.network(
-                          report.imageUrl,
-                          fit: BoxFit.cover,
-                          errorBuilder:
-                              (
-                            context,
-                            error,
-                            stackTrace,
-                          ) {
-                            return Icon(
-                              Icons
-                                  .broken_image_outlined,
-                              size: 56,
-                              color:
-                                  Colors.grey.shade400,
-                            );
-                          },
-                        ),
+                  if (report.imageUrl.isNotEmpty) ...[
+                    const Text(
+                      'Report Evidence',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.black87,
                       ),
                     ),
-                  const SizedBox(height: 18),
+                    const SizedBox(height: 10),
+                    _buildEvidenceImage(
+                      imageUrl: report.imageUrl,
+                      previewTitle: 'Report Evidence',
+                    ),
+                    const SizedBox(height: 18),
+                  ],
                   Row(
                     children: [
                       Expanded(
@@ -1114,7 +1753,9 @@ class _CollectorReportDetailScreenState
                           ),
                         ),
                         child: Text(
-                          report.status,
+                          report.status == 'Completion Submitted'
+                              ? 'Under Admin Review'
+                              : report.status,
                           style: TextStyle(
                             color: statusColor,
                             fontWeight:
@@ -1126,6 +1767,14 @@ class _CollectorReportDetailScreenState
                     ],
                   ),
                   const SizedBox(height: 18),
+                  _buildTaskProgress(
+                    status: report.status,
+                  ),
+                  const SizedBox(height: 16),
+                  _buildReportChatSection(report),
+                  const SizedBox(height: 12),
+                  _buildAdminCollectorChatSection(report),
+                  const SizedBox(height: 16),
                   if (isWaitingForReview ||
                       wasCompletionRejected ||
                       isResolved) ...[
@@ -1226,51 +1875,15 @@ class _CollectorReportDetailScreenState
                       ),
                     ),
                     const SizedBox(height: 12),
-                    Container(
-                      width: double.infinity,
-                      height: 220,
-                      decoration:
-                          BoxDecoration(
-                        borderRadius:
-                            BorderRadius.circular(
-                          24,
-                        ),
-                        color:
-                            Colors.grey.shade200,
-                        border:
-                            wasCompletionRejected
-                                ? Border.all(
-                                    color:
-                                        Colors.red.shade200,
-                                    width: 2,
-                                  )
-                                : null,
+                    _buildEvidenceImage(
+                      imageUrl: report.completionImageUrl,
+                      previewTitle: _completionProofTitle(
+                        status: report.status,
+                        verificationStatus: verificationStatus,
                       ),
-                      child: ClipRRect(
-                        borderRadius:
-                            BorderRadius.circular(
-                          22,
-                        ),
-                        child: Image.network(
-                          report
-                              .completionImageUrl,
-                          fit: BoxFit.cover,
-                          errorBuilder:
-                              (
-                            context,
-                            error,
-                            stackTrace,
-                          ) {
-                            return Icon(
-                              Icons
-                                  .broken_image_outlined,
-                              size: 56,
-                              color:
-                                  Colors.grey.shade400,
-                            );
-                          },
-                        ),
-                      ),
+                      borderColor: wasCompletionRejected
+                          ? Colors.red.shade200
+                          : null,
                     ),
                   ],
                   const SizedBox(height: 28),
@@ -1298,10 +1911,9 @@ class _CollectorReportDetailScreenState
                               OutlinedButton
                                   .styleFrom(
                             foregroundColor:
-                                Colors.blueGrey,
-                            side: BorderSide(
-                              color: Colors
-                                  .grey.shade300,
+                                _collectorPrimary,
+                            side: const BorderSide(
+                              color: _collectorPrimary,
                             ),
                             shape:
                                 RoundedRectangleBorder(
@@ -1367,7 +1979,7 @@ class _CollectorReportDetailScreenState
                             backgroundColor:
                                 wasCompletionRejected
                                     ? Colors.red
-                                    : statusColor,
+                                    : _collectorPrimary,
                             foregroundColor:
                                 Colors.white,
                             disabledBackgroundColor:

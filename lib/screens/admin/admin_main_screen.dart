@@ -4,14 +4,16 @@ import 'package:curved_navigation_bar/curved_navigation_bar.dart';
 import 'admin_dashboard_screen.dart';
 import 'admin_report_list_screen.dart';
 import 'admin_collector_application_screen.dart';
+import 'admin_user_management_screen.dart';
 import '../user/map_page.dart';
-import '../../services/kampar_data.dart';
+import '../shared/report_messages_fab.dart';
 
 class AdminMainScreen extends StatefulWidget {
   const AdminMainScreen({super.key});
 
   @override
-  State<AdminMainScreen> createState() => _AdminMainScreenState();
+  State<AdminMainScreen> createState() =>
+      _AdminMainScreenState();
 }
 
 class _AdminMainScreenState extends State<AdminMainScreen> {
@@ -20,9 +22,8 @@ class _AdminMainScreenState extends State<AdminMainScreen> {
   String _reportFilter = 'All';
   String _areaFilter = '';
 
-  bool _isUpdatingLocationMetadata = false;
-
-  final GlobalKey<CurvedNavigationBarState> _bottomNavigationKey =
+  final GlobalKey<CurvedNavigationBarState>
+      _bottomNavigationKey =
       GlobalKey<CurvedNavigationBarState>();
 
   // ============================================================
@@ -86,89 +87,6 @@ class _AdminMainScreenState extends State<AdminMainScreen> {
   }
 
   // ============================================================
-  // LOCATION METADATA
-  // ============================================================
-  //
-  // Kept for development use.
-  // The visible dashboard button is hidden temporarily for demos.
-  //
-  // ============================================================
-
-  Future<void> _updateLocationMetadata() async {
-    if (_isUpdatingLocationMetadata) {
-      return;
-    }
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Update Location Metadata?'),
-          content: const Text(
-            'This will update collection-area aliases, landmarks, '
-            'and street patterns in Firestore.\n\n'
-            'It will NOT delete collection areas, schedules, users, or reports.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context, false);
-              },
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () {
-                Navigator.pop(context, true);
-              },
-              child: const Text('Update'),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (confirmed != true) {
-      return;
-    }
-
-    setState(() {
-      _isUpdatingLocationMetadata = true;
-    });
-
-    try {
-      await KamparData.refreshLocationMetadata();
-
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Kampar location metadata updated successfully.',
-          ),
-          duration: Duration(seconds: 4),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Failed to update location metadata:\n$e',
-          ),
-          duration: const Duration(seconds: 8),
-        ),
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isUpdatingLocationMetadata = false;
-        });
-      }
-    }
-  }
-
-  // ============================================================
   // PHONE BACK BUTTON
   // ============================================================
 
@@ -188,28 +106,73 @@ class _AdminMainScreenState extends State<AdminMainScreen> {
   @override
   Widget build(BuildContext context) {
     final List<Widget> pages = [
+      // 0 - Dashboard
       AdminDashboardScreen(
         onNavigateToReports: _navigateToReports,
-        onNavigateToReportsByArea: _navigateToReportsByArea,
+        onNavigateToReportsByArea:
+            _navigateToReportsByArea,
         onNavigateToMap: _navigateToMap,
       ),
+
+      // 1 - Public waste reports
       AdminReportListScreen(
         initialFilter: _reportFilter,
         initialAreaFilter: _areaFilter,
       ),
+
+      // 2 - Report map
       const MapPage(
         showAllReports: true,
-        isAdminMode: true,
       ),
+
+      // 3 - Collector applications
       const AdminCollectorApplicationScreen(),
+
+      // 4 - User / Collector account management
+      const AdminUserManagementScreen(),
     ];
 
-    return WillPopScope(
-      onWillPop: _onWillPop,
-      child: Scaffold(
-        extendBody: true,
-        backgroundColor: const Color(0xFFEFF6FF),
-        body: SafeArea(
+    final baseTheme = Theme.of(context);
+    final adminTheme = baseTheme.copyWith(
+      colorScheme: baseTheme.colorScheme.copyWith(
+        primary: Colors.blue,
+        secondary: Colors.blueAccent,
+      ),
+      progressIndicatorTheme: const ProgressIndicatorThemeData(
+        color: Colors.blue,
+      ),
+      textSelectionTheme: const TextSelectionThemeData(
+        cursorColor: Colors.blue,
+        selectionHandleColor: Colors.blue,
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: Colors.blue,
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: Colors.blue,
+          side: const BorderSide(color: Colors.blue),
+        ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: Colors.blue,
+          foregroundColor: Colors.white,
+        ),
+      ),
+    );
+
+    return Theme(
+      data: adminTheme,
+      child: WillPopScope(
+        onWillPop: _onWillPop,
+        child: Scaffold(
+          extendBody: true,
+          backgroundColor: const Color(0xFFEFF6FF),
+
+          body: SafeArea(
           bottom: false,
           child: IndexedStack(
             index: _index,
@@ -217,10 +180,13 @@ class _AdminMainScreenState extends State<AdminMainScreen> {
           ),
         ),
 
-        // Temporarily hidden for supervisor/demo presentation.
-        floatingActionButton: null,
+          floatingActionButton: const Padding(
+            padding: EdgeInsets.only(bottom: 72),
+            child: ReportMessagesFab(currentRole: 'admin'),
+          ),
+          floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
 
-        bottomNavigationBar: CurvedNavigationBar(
+          bottomNavigationBar: CurvedNavigationBar(
           key: _bottomNavigationKey,
           index: _index,
           height: 65.0,
@@ -228,7 +194,9 @@ class _AdminMainScreenState extends State<AdminMainScreen> {
           color: Colors.blue,
           buttonBackgroundColor: Colors.blue,
           animationCurve: Curves.easeInOut,
-          animationDuration: const Duration(milliseconds: 300),
+          animationDuration: const Duration(
+            milliseconds: 300,
+          ),
           onTap: _onItemTapped,
           items: const <Widget>[
             Icon(
@@ -251,7 +219,13 @@ class _AdminMainScreenState extends State<AdminMainScreen> {
               size: 27,
               color: Colors.white,
             ),
+            Icon(
+              Icons.manage_accounts_outlined,
+              size: 27,
+              color: Colors.white,
+            ),
           ],
+          ),
         ),
       ),
     );

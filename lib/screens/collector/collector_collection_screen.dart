@@ -39,6 +39,8 @@ class _CollectorCollectionScreenState
   bool _isRefreshing = false;
 
   String _searchQuery = '';
+  bool _filtersExpanded = false;
+  final FocusNode _searchFocusNode = FocusNode();
 
   _CollectionRunFilter _selectedRunFilter =
       _CollectionRunFilter.active;
@@ -74,6 +76,7 @@ class _CollectorCollectionScreenState
   @override
   void dispose() {
     _searchController.dispose();
+    _searchFocusNode.dispose();
     super.dispose();
   }
 
@@ -430,51 +433,61 @@ class _CollectorCollectionScreenState
   // FILTER DUTIES
   // ============================================================
 
-  List<_CollectionDuty> get _filteredDuties {
+  bool _matchesSearch(_CollectionDuty duty) {
     final query = _searchQuery.trim().toLowerCase();
 
-    return _duties.where((duty) {
-      final status = _localStatusForDuty(duty);
+    if (query.isEmpty) {
+      return true;
+    }
 
-      final bool matchesRunFilter;
+    final area = duty.area;
 
-      switch (_selectedRunFilter) {
-        case _CollectionRunFilter.active:
-          matchesRunFilter = status != 'collected';
-          break;
+    final values = <String>[
+      area.areaName,
+      area.zoneName,
+      area.zoneArea,
+      area.district,
+      ...area.aliases,
+      ...area.landmarks,
+      ...area.streetPatterns,
+    ];
 
-        case _CollectionRunFilter.completedToday:
-          matchesRunFilter = status == 'collected';
-          break;
+    return values.any(
+      (value) => value.toLowerCase().contains(query),
+    );
+  }
 
-        case _CollectionRunFilter.all:
-          matchesRunFilter = true;
-          break;
-      }
+  bool _matchesRunFilter(
+    _CollectionDuty duty,
+    _CollectionRunFilter filter,
+  ) {
+    final status = _localStatusForDuty(duty);
 
-      if (!matchesRunFilter) {
-        return false;
-      }
+    switch (filter) {
+      case _CollectionRunFilter.active:
+        // Preserve the existing Collection Run behaviour: everything
+        // not yet collected remains in the Active view.
+        return status != 'collected';
 
-      if (query.isEmpty) {
+      case _CollectionRunFilter.completedToday:
+        return status == 'collected';
+
+      case _CollectionRunFilter.all:
         return true;
-      }
+    }
+  }
 
-      final area = duty.area;
+  int _runFilterCount(_CollectionRunFilter filter) {
+    return _duties.where((duty) {
+      return _matchesSearch(duty) &&
+          _matchesRunFilter(duty, filter);
+    }).length;
+  }
 
-      final values = <String>[
-        area.areaName,
-        area.zoneName,
-        area.zoneArea,
-        area.district,
-        ...area.aliases,
-        ...area.landmarks,
-        ...area.streetPatterns,
-      ];
-
-      return values.any(
-        (value) => value.toLowerCase().contains(query),
-      );
+  List<_CollectionDuty> get _filteredDuties {
+    return _duties.where((duty) {
+      return _matchesSearch(duty) &&
+          _matchesRunFilter(duty, _selectedRunFilter);
     }).toList();
   }
 
@@ -546,7 +559,7 @@ class _CollectorCollectionScreenState
 
     switch (event.status) {
       case 'in_progress':
-        return Colors.orange;
+        return Colors.blue;
 
       case 'collected':
         return Colors.green;
@@ -790,7 +803,7 @@ class _CollectorCollectionScreenState
               style: FilledButton.styleFrom(
                 backgroundColor: destructive
                     ? Colors.red
-                    : Colors.orange,
+                    : const Color(0xFFFFB547),
               ),
               child: Text(
                 confirmText,
@@ -817,109 +830,162 @@ class _CollectorCollectionScreenState
   }
 
   // ============================================================
-  // RUN FILTER BUTTON
+  // COLLAPSIBLE RUN FILTER
   // ============================================================
 
-  Widget _buildRunFilterButton() {
+  Widget _buildFilterToggleButton() {
     final isDefault =
-        _selectedRunFilter ==
-            _CollectionRunFilter.active;
+        _selectedRunFilter == _CollectionRunFilter.active;
 
-    return PopupMenuButton<_CollectionRunFilter>(
-      tooltip: 'Filter collection runs',
-      onSelected: (filter) {
-        setState(() {
-          _selectedRunFilter = filter;
-        });
-      },
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
-      itemBuilder: (context) {
-        return _CollectionRunFilter.values.map(
-          (filter) {
-            final selected =
-                _selectedRunFilter == filter;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        IconButton(
+          tooltip: _filtersExpanded
+              ? 'Hide collection run filters'
+              : 'Show collection run filters',
+          onPressed: () {
+            FocusScope.of(context).unfocus();
 
-            return PopupMenuItem<_CollectionRunFilter>(
-              value: filter,
-              child: Row(
-                children: [
-                  Icon(
-                    _runFilterIcon(filter),
-                    size: 20,
-                    color: selected
-                        ? Colors.orange.shade700
-                        : Colors.grey.shade700,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      _runFilterLabel(filter),
-                      style: TextStyle(
-                        fontWeight: selected
-                            ? FontWeight.w800
-                            : FontWeight.w600,
-                        color: selected
-                            ? Colors.orange.shade800
-                            : Colors.black87,
-                      ),
-                    ),
-                  ),
-                  if (selected)
-                    Icon(
-                      Icons.check_rounded,
-                      size: 20,
-                      color: Colors.orange.shade700,
-                    ),
-                ],
-              ),
-            );
+            setState(() {
+              _filtersExpanded = !_filtersExpanded;
+            });
           },
-        ).toList();
-      },
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color: Colors.grey.shade200,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.04),
-                  blurRadius: 8,
-                  offset: const Offset(0, 3),
+          icon: Icon(
+            _filtersExpanded
+                ? Icons.filter_list_off_rounded
+                : Icons.filter_list_rounded,
+            color: Colors.orange.shade700,
+          ),
+        ),
+        if (!isDefault)
+          Positioned(
+            right: 8,
+            top: 7,
+            child: Container(
+              width: 9,
+              height: 9,
+              decoration: BoxDecoration(
+                color: Colors.orange.shade700,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: Colors.white,
+                  width: 1.5,
                 ),
-              ],
-            ),
-            child: Icon(
-              Icons.filter_list_rounded,
-              color: Colors.orange.shade700,
+              ),
             ),
           ),
-          if (!isDefault)
-            Positioned(
-              right: -1,
-              top: -1,
-              child: Container(
-                width: 10,
-                height: 10,
-                decoration: BoxDecoration(
-                  color: Colors.orange.shade700,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: const Color(0xFFF7F9FC),
-                    width: 2,
+      ],
+    );
+  }
+
+  Widget _buildFilterPanel() {
+    if (!_filtersExpanded) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: Colors.orange.shade100,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.035),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.tune_rounded,
+                size: 19,
+                color: Colors.orange.shade700,
+              ),
+              const SizedBox(width: 7),
+              const Expanded(
+                child: Text(
+                  'Collection Run Filter',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.black87,
                   ),
                 ),
               ),
-            ),
+              TextButton(
+                onPressed: _selectedRunFilter ==
+                        _CollectionRunFilter.active
+                    ? null
+                    : () {
+                        setState(() {
+                          _selectedRunFilter =
+                              _CollectionRunFilter.active;
+                        });
+                      },
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.orange.shade700,
+                  visualDensity: VisualDensity.compact,
+                ),
+                child: const Text('Reset'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _CollectionRunFilter.values.map((filter) {
+              final selected = _selectedRunFilter == filter;
+              final count = _runFilterCount(filter);
+
+              return ChoiceChip(
+                avatar: Icon(
+                  _runFilterIcon(filter),
+                  size: 17,
+                  color: selected
+                      ? Colors.white
+                      : Colors.orange.shade700,
+                ),
+                label: Text(
+                  '${_runFilterLabel(filter)} ($count)',
+                ),
+                selected: selected,
+                onSelected: (_) {
+                  setState(() {
+                    _selectedRunFilter = filter;
+                  });
+                },
+                showCheckmark: false,
+                selectedColor: const Color(0xFFFFB547),
+                backgroundColor: Colors.orange.shade50,
+                side: BorderSide(
+                  color: selected
+                      ? Colors.transparent
+                      : Colors.orange.shade100,
+                ),
+                labelStyle: TextStyle(
+                  color: selected
+                      ? Colors.white
+                      : Colors.orange.shade900,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              );
+            }).toList(),
+          ),
         ],
       ),
     );
@@ -940,21 +1006,13 @@ class _CollectorCollectionScreenState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'Collection Runs',
-                  style: TextStyle(
-                    fontSize: 26,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.black87,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              _buildRunFilterButton(),
-            ],
+          const Text(
+            'Collection Runs',
+            style: TextStyle(
+              fontSize: 26,
+              fontWeight: FontWeight.w800,
+              color: Colors.black87,
+            ),
           ),
 
           const SizedBox(height: 5),
@@ -1088,53 +1146,64 @@ class _CollectorCollectionScreenState
       ),
       child: TextField(
         controller: _searchController,
+        focusNode: _searchFocusNode,
+        autocorrect: false,
+        enableSuggestions: false,
+        textInputAction: TextInputAction.search,
         onChanged: (value) {
           setState(() {
             _searchQuery = value;
           });
         },
         decoration: InputDecoration(
-          hintText:
-              'Search area, zone or landmark...',
+          hintText: 'Search area, zone or landmark...',
           prefixIcon: const Icon(
             Icons.search_rounded,
           ),
-          suffixIcon: _searchQuery.isEmpty
-              ? null
-              : IconButton(
+          suffixIcon: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_searchQuery.isNotEmpty)
+                IconButton(
+                  tooltip: 'Clear search',
                   onPressed: () {
                     _searchController.clear();
 
                     setState(() {
                       _searchQuery = '';
                     });
+
+                    _searchFocusNode.requestFocus();
                   },
                   icon: const Icon(
                     Icons.close_rounded,
                   ),
                 ),
+              _buildFilterToggleButton(),
+            ],
+          ),
+          suffixIconConstraints: const BoxConstraints(
+            minWidth: 48,
+            minHeight: 48,
+          ),
           filled: true,
           fillColor: Colors.white,
-          contentPadding:
-              const EdgeInsets.symmetric(
+          contentPadding: const EdgeInsets.symmetric(
             horizontal: 14,
             vertical: 14,
           ),
           border: OutlineInputBorder(
-            borderRadius:
-                BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(16),
             borderSide: BorderSide.none,
           ),
           enabledBorder: OutlineInputBorder(
-            borderRadius:
-                BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(16),
             borderSide: BorderSide(
               color: Colors.grey.shade200,
             ),
           ),
           focusedBorder: OutlineInputBorder(
-            borderRadius:
-                BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(16),
             borderSide: BorderSide(
               color: Colors.orange.shade400,
               width: 1.5,
@@ -1483,7 +1552,7 @@ class _CollectorCollectionScreenState
               style:
                   ElevatedButton.styleFrom(
                 backgroundColor:
-                    Colors.orange,
+                    const Color(0xFFFFB547),
                 foregroundColor:
                     Colors.white,
                 elevation: 0,
@@ -1719,8 +1788,9 @@ class _CollectorCollectionScreenState
 
     return Scaffold(
       backgroundColor:
-          const Color(0xFFF7F9FC),
+          const Color(0xFFFFFAF4),
       body: SafeArea(
+        bottom: false,
         child: Column(
           crossAxisAlignment:
               CrossAxisAlignment.start,
@@ -1728,6 +1798,8 @@ class _CollectorCollectionScreenState
             _buildHeader(),
 
             _buildSearchBar(),
+
+            _buildFilterPanel(),
 
             Padding(
               padding:
@@ -1805,13 +1877,11 @@ class _CollectorCollectionScreenState
                           },
                           child:
                               ListView.builder(
-                            padding:
-                                const EdgeInsets
-                                    .fromLTRB(
+                            padding: EdgeInsets.fromLTRB(
                               16,
                               4,
                               16,
-                              110,
+                              115 + MediaQuery.of(context).padding.bottom,
                             ),
                             physics:
                                 const AlwaysScrollableScrollPhysics(),

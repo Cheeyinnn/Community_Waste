@@ -649,36 +649,85 @@ class _CollectorDashboardScreenState extends State<CollectorDashboardScreen> {
   List<WasteReport> _getFilteredReports(List<WasteReport> reports) {
     final now = DateTime.now();
 
+    // Completion Progress should represent when the collector's task
+    // was most recently worked on, not when the resident originally
+    // created the report. Collector actions such as starting a task,
+    // submitting proof, resubmitting proof and final resolution all
+    // update the report's updatedAt timestamp.
+    bool isWithinPeriod(
+      WasteReport report,
+      DateTime start,
+      DateTime end,
+    ) {
+      final activityDate = report.updatedAt.toDate();
+
+      return !activityDate.isBefore(start) &&
+          activityDate.isBefore(end);
+    }
+
     switch (_selectedFilter) {
       case ProgressFilter.today:
-        final start = DateTime(now.year, now.month, now.day);
-        final end = start.add(const Duration(days: 1));
-        return reports.where((r) {
-          final created = r.createdAt.toDate();
-          return !created.isBefore(start) && created.isBefore(end);
-        }).toList();
+        final start = DateTime(
+          now.year,
+          now.month,
+          now.day,
+        );
+        final end = start.add(
+          const Duration(days: 1),
+        );
+
+        return reports
+            .where(
+              (report) =>
+                  isWithinPeriod(report, start, end),
+            )
+            .toList();
 
       case ProgressFilter.week:
         final start = DateTime(
           now.year,
           now.month,
           now.day,
-        ).subtract(Duration(days: now.weekday - 1));
-        final end = start.add(const Duration(days: 7));
-        return reports.where((r) {
-          final created = r.createdAt.toDate();
-          return !created.isBefore(start) && created.isBefore(end);
-        }).toList();
+        ).subtract(
+          Duration(days: now.weekday - 1),
+        );
+
+        final end = start.add(
+          const Duration(days: 7),
+        );
+
+        return reports
+            .where(
+              (report) =>
+                  isWithinPeriod(report, start, end),
+            )
+            .toList();
 
       case ProgressFilter.month:
-        final start = DateTime(now.year, now.month, 1);
+        final start = DateTime(
+          now.year,
+          now.month,
+          1,
+        );
+
         final end = now.month == 12
-            ? DateTime(now.year + 1, 1, 1)
-            : DateTime(now.year, now.month + 1, 1);
-        return reports.where((r) {
-          final created = r.createdAt.toDate();
-          return !created.isBefore(start) && created.isBefore(end);
-        }).toList();
+            ? DateTime(
+                now.year + 1,
+                1,
+                1,
+              )
+            : DateTime(
+                now.year,
+                now.month + 1,
+                1,
+              );
+
+        return reports
+            .where(
+              (report) =>
+                  isWithinPeriod(report, start, end),
+            )
+            .toList();
 
       case ProgressFilter.all:
         return reports;
@@ -701,7 +750,7 @@ class _CollectorDashboardScreenState extends State<CollectorDashboardScreen> {
         : (currentUser.email?.split('@').first ?? 'Collector');
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F9FC),
+      backgroundColor: const Color(0xFFFFFAF4),
       body: SafeArea(
         bottom: false,
         child: StreamBuilder<List<WasteReport>>(
