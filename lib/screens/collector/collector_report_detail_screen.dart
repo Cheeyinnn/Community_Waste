@@ -289,17 +289,76 @@ class _CollectorReportDetailScreenState
 
     Future<void> pickCompletionImage(
       StateSetter setStateSheet,
+      BuildContext activeSheetContext,
     ) async {
+      final source = await showModalBottomSheet<ImageSource>(
+        context: activeSheetContext,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(
+            top: Radius.circular(20),
+          ),
+        ),
+        builder: (sourceSheetContext) {
+          return SafeArea(
+            child: Wrap(
+              children: [
+                const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text(
+                    'Completion Evidence Photo',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(
+                    Icons.photo_library_outlined,
+                    color: Color(0xFFFFB547),
+                  ),
+                  title: const Text('Choose from Gallery'),
+                  onTap: () => Navigator.pop(
+                    sourceSheetContext,
+                    ImageSource.gallery,
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(
+                    Icons.photo_camera_outlined,
+                    color: Color(0xFFFFB547),
+                  ),
+                  title: const Text('Take a Photo'),
+                  subtitle: const Text('Open the phone camera'),
+                  onTap: () => Navigator.pop(
+                    sourceSheetContext,
+                    ImageSource.camera,
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ],
+            ),
+          );
+        },
+      );
+
+      if (source == null || !activeSheetContext.mounted) return;
+
+      // Wait for the source selector to finish closing before opening the
+      // native Gallery/Camera flow.
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      if (!activeSheetContext.mounted) return;
+
       final picked = await ImagePicker().pickImage(
-        source: ImageSource.gallery,
+        source: source,
         imageQuality: 70,
       );
 
-      if (picked != null) {
-        setStateSheet(() {
-          completionImageFile = File(picked.path);
-        });
-      }
+      if (picked == null || !activeSheetContext.mounted) return;
+
+      setStateSheet(() {
+        completionImageFile = File(picked.path);
+      });
     }
 
     await showModalBottomSheet(
@@ -496,8 +555,10 @@ class _CollectorReportDetailScreenState
                       ),
                       const SizedBox(height: 10),
                       GestureDetector(
-                        onTap: () =>
-                            pickCompletionImage(setStateSheet),
+                        onTap: () => pickCompletionImage(
+                          setStateSheet,
+                          builderContext,
+                        ),
                         child: Container(
                           height: 160,
                           width: double.infinity,
@@ -535,7 +596,7 @@ class _CollectorReportDetailScreenState
                                     ),
                                     const SizedBox(height: 8),
                                     Text(
-                                      'Tap to upload new proof photo',
+                                      'Tap to choose Gallery or Camera',
                                       style: TextStyle(
                                         color:
                                             Colors.orange.shade700,

@@ -73,8 +73,21 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
       final accountStatus =
           userData['accountStatus']?.toString().trim().toLowerCase() ??
               'active';
+      final collectorStatus =
+          userData['collectorApplicationStatus']
+                  ?.toString()
+                  .trim()
+                  .toLowerCase() ??
+              '';
 
-      if (accountStatus == 'suspended' && role != 'admin') {
+      // Collector-only suspension must never block normal User access.
+      // Keep this consistent with LoginScreen, UserAccessGate and startup.
+      final isCollectorOnlySuspension =
+          role == 'user' && collectorStatus == 'suspended';
+
+      if (accountStatus == 'suspended' &&
+          role != 'admin' &&
+          !isCollectorOnlySuspension) {
         final reason =
             userData['accountSuspensionReason']?.toString().trim() ?? '';
 

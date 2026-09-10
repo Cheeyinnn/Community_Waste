@@ -337,7 +337,7 @@ class _AdminReportDetailScreenState extends State<AdminReportDetailScreen> {
                   zoneFound
                       ? _reportZoneDisplay
                       : 'Collector assignment is disabled until this '
-                          'report can be matched to a Kampar collection zone.',
+                          'report can be matched to a configured Perak collection zone.',
                   style: TextStyle(
                     fontSize: 13,
                     height: 1.35,

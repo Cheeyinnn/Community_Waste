@@ -48,7 +48,7 @@ class _CollectionScheduleScreenState
 
   Future<void> _loadAreas() async {
     try {
-      final areas = await _scheduleService.getAvailableAreas();
+      final areas = await _scheduleService.getAvailableAreas(forceRefresh: true);
       final savedArea = await _scheduleService.getSavedPreferredArea();
 
       if (!mounted) return;
@@ -394,6 +394,10 @@ class _CollectionScheduleScreenState
       'kampar',
       'daerah kampar',
       'kampar district',
+      'ipoh',
+      'kinta',
+      'daerah kinta',
+      'kinta district',
     };
 
     return !ignored.contains(text.toLowerCase());
@@ -504,7 +508,11 @@ class _CollectionScheduleScreenState
       if (!allowKampar &&
           (lower == 'kampar' ||
               lower == 'daerah kampar' ||
-              lower == 'kampar district')) {
+              lower == 'kampar district' ||
+              lower == 'ipoh' ||
+              lower == 'kinta' ||
+              lower == 'daerah kinta' ||
+              lower == 'kinta district')) {
         continue;
       }
 
@@ -999,6 +1007,22 @@ class _CollectionScheduleScreenState
   // AREA SELECTOR
   // ============================================================
 
+  String _areaSelectorMeta(CollectionArea area) {
+    if (area.localAuthorityId == 'mbi_ipoh') {
+      return 'MBI service zone • ${area.district}, ${area.state}';
+    }
+
+    return '${area.zoneName} • ${area.district}, ${area.state}';
+  }
+
+  String _areaRouteLabel(CollectionArea area) {
+    if (area.localAuthorityId == 'mbi_ipoh') {
+      return 'MBI • ${area.zoneArea}';
+    }
+
+    return '${area.zoneName} • ${area.zoneArea}';
+  }
+
   Widget _buildAreaSelector() {
     final area = _selectedArea;
 
@@ -1089,7 +1113,7 @@ class _CollectionScheduleScreenState
                           ),
                           const SizedBox(height: 3),
                           Text(
-                            '${area.zoneName} • ${area.district}, ${area.state}',
+                            _areaSelectorMeta(area),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
@@ -1211,6 +1235,439 @@ class _CollectionScheduleScreenState
         ],
       ),
     );
+  }
+
+  // ============================================================
+  // PUBLISHED FREQUENCY ONLY
+  //
+  // Used for an authority such as MBI where the public source confirms the
+  // service frequency but does not publish which recurring weekday pattern
+  // applies to every locality. We show the verified information without
+  // inventing an exact next-collection date.
+  // ============================================================
+
+  Widget _buildPublishedFrequencyCard(
+    CollectionArea area,
+    CollectionSchedule schedule,
+  ) {
+    final note = schedule.scheduleNote.trim().isNotEmpty
+        ? schedule.scheduleNote.trim()
+        : 'The collection frequency for this area is available, while the '
+            'exact locality weekday pattern is still being confirmed.';
+
+    final isVariableThreeTimes =
+        schedule.scheduleType.toLowerCase() ==
+            'three_times_weekly_variable';
+
+    final startTime = _formatTime(
+      schedule.startHour,
+      schedule.startMinute,
+    );
+    final endTime = _formatTime(
+      schedule.endHour,
+      schedule.endMinute,
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Use the SAME hero-card visual language as the exact Kampar schedule.
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [
+                Color(0xFF35C76F),
+                Color(0xFF26A65B),
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.green.withOpacity(0.18),
+                blurRadius: 15,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Row(
+                children: [
+                  Icon(
+                    Icons.local_shipping_outlined,
+                    color: Colors.white,
+                    size: 24,
+                  ),
+                  SizedBox(width: 9),
+                  Text(
+                    'Collection Schedule',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 18),
+
+              const Text(
+                'Collection frequency',
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+
+              const SizedBox(height: 5),
+
+              Text(
+                isVariableThreeTimes
+                    ? '3 times weekly'
+                    : schedule.scheduleDisplayName,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+
+              const SizedBox(height: 13),
+
+              _buildMainCardInfoRow(
+                icon: Icons.access_time_rounded,
+                text: '$startTime - $endTime',
+              ),
+
+              const SizedBox(height: 8),
+
+              _buildMainCardInfoRow(
+                icon: Icons.event_repeat_rounded,
+                text: isVariableThreeTimes
+                    ? '3 times weekly'
+                    : schedule.scheduleDisplayName,
+              ),
+
+              const SizedBox(height: 16),
+
+              Divider(
+                color: Colors.white.withOpacity(0.25),
+                height: 1,
+              ),
+
+              const SizedBox(height: 14),
+
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.16),
+                      borderRadius: BorderRadius.circular(11),
+                    ),
+                    child: const Icon(
+                      Icons.info_outline_rounded,
+                      color: Colors.white,
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Today\'s Status',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        const Text(
+                          'Collection pattern available',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          note,
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 12,
+                            height: 1.35,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 15),
+
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 7,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.14),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.route_outlined,
+                      color: Colors.white,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 7),
+                    Expanded(
+                      child: Text(
+                        _buildAreaRouteLabel(area),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        if (isVariableThreeTimes) ...[
+          const SizedBox(height: 18),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.green.shade50,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.green.shade100),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.sync_rounded,
+                  size: 19,
+                  color: Colors.green.shade700,
+                ),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Text(
+                    'This area is using an older schedule record. Refresh the collection-area data to load the assigned recurring days.',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      height: 1.4,
+                      color: Colors.green.shade800,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildPatternChip(String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: 13,
+        vertical: 7,
+      ),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEAF9F0),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: const Color(0xFFD2EFDD),
+        ),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          fontSize: 11.5,
+          fontWeight: FontWeight.w800,
+          color: Color(0xFF168447),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildServiceCapability({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: 7,
+        vertical: 10,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(
+          color: const Color(0xFFE1F1E7),
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            icon,
+            size: 20,
+            color: const Color(0xFF1D9F55),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 10.5,
+              height: 1.15,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF31443A),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            subtitle,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 9.3,
+              height: 1.15,
+              color: Colors.grey.shade600,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPossiblePatternCard({
+    required String title,
+    required String subtitle,
+    required List<String> days,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: Colors.grey.shade200,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 9,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: const Color(0xFFEAF9F0),
+              borderRadius: BorderRadius.circular(13),
+            ),
+            child: const Icon(
+              Icons.calendar_month_outlined,
+              color: Color(0xFF1D9F55),
+              size: 21,
+            ),
+          ),
+          const SizedBox(width: 11),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: Colors.grey.shade600,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Wrap(
+            spacing: 4,
+            children: days
+                .map(
+                  (day) => Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 7,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF0FAF4),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      day,
+                      style: const TextStyle(
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF178447),
+                      ),
+                    ),
+                  ),
+                )
+                .toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _buildAreaRouteLabel(CollectionArea area) {
+    final parts = <String>[
+      area.zoneName,
+      area.district,
+      area.zoneArea,
+    ].where((value) => value.trim().isNotEmpty).toList();
+
+    return parts.join(' • ');
   }
 
   // ============================================================
@@ -1422,7 +1879,7 @@ class _CollectionScheduleScreenState
 
                 Expanded(
                   child: Text(
-                    '${area.zoneName} • ${area.zoneArea}',
+                    _areaRouteLabel(area),
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 12,
@@ -1637,72 +2094,217 @@ class _CollectionScheduleScreenState
     final sourceDate =
         _formatSourceDate(schedule.sourceUpdatedDate);
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        2,
-        2,
-        2,
-        8,
+    final officialFrequency =
+        schedule.officialServiceFrequency.trim().isNotEmpty
+            ? schedule.officialServiceFrequency.trim()
+            : schedule.scheduleDisplayName;
+
+    final basisColor = Colors.green.shade700;
+    final basisBackground = const Color(0xFFF0FAF4);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(17),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: Colors.grey.shade200,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.035),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Divider(
-            color: Colors.grey.shade300,
-          ),
-
-          const SizedBox(height: 8),
-
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(
-                Icons.account_balance_outlined,
-                size: 16,
-                color: Colors.grey.shade500,
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  Icons.info_outline_rounded,
+                  color: Colors.green.shade700,
+                  size: 21,
+                ),
               ),
-
-              const SizedBox(width: 7),
-
-              Expanded(
+              const SizedBox(width: 11),
+              const Expanded(
                 child: Text(
-                  schedule.localAuthorityName,
+                  'Schedule Information',
                   style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey.shade600,
-                    fontWeight: FontWeight.w600,
+                    fontSize: 16.5,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.black87,
                   ),
                 ),
               ),
             ],
           ),
 
-          if (sourceDate.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Row(
-              crossAxisAlignment:
-                  CrossAxisAlignment.start,
+          const SizedBox(height: 15),
+
+          _buildScheduleDetailRow(
+            icon: Icons.location_on_outlined,
+            label: 'Area / zone',
+            value: '${area.areaName} • ${area.zoneName}',
+          ),
+          _buildScheduleDetailRow(
+            icon: Icons.account_balance_outlined,
+            label: 'Local authority',
+            value: schedule.localAuthorityName,
+          ),
+          _buildScheduleDetailRow(
+            icon: Icons.delete_outline_rounded,
+            label: 'Service',
+            value: schedule.serviceType,
+          ),
+          _buildScheduleDetailRow(
+            icon: Icons.event_repeat_rounded,
+            label: 'Collection days',
+            value: schedule.scheduleDisplayName,
+          ),
+          _buildScheduleDetailRow(
+            icon: Icons.access_time_rounded,
+            label: 'Operating hours',
+            value:
+                '${_formatTime(schedule.startHour, schedule.startMinute)} - '
+                '${_formatTime(schedule.endHour, schedule.endMinute)}',
+          ),
+          _buildScheduleDetailRow(
+            icon: Icons.fact_check_outlined,
+            label: 'Collection frequency',
+            value: officialFrequency,
+          ),
+
+          const SizedBox(height: 4),
+
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 10,
+            ),
+            decoration: BoxDecoration(
+              color: basisBackground,
+              borderRadius: BorderRadius.circular(13),
+              border: Border.all(
+                color: basisColor.withOpacity(0.18),
+              ),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Icon(
                   Icons.verified_outlined,
+                  size: 18,
+                  color: basisColor,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Collection service',
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w800,
+                          color: basisColor,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        'Waste collection for this area follows the recurring days and operating hours shown above. Please keep waste ready before the collection period begins.',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          height: 1.35,
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          if (sourceDate.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Icon(
+                  Icons.update_rounded,
                   size: 16,
                   color: Colors.grey.shade500,
                 ),
-
                 const SizedBox(width: 7),
-
                 Expanded(
                   child: Text(
-                    'Official schedule source dated $sourceDate.',
+                    'Service information updated: $sourceDate',
                     style: TextStyle(
                       fontSize: 11.5,
                       color: Colors.grey.shade600,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
               ],
             ),
           ],
+
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScheduleDetailRow({
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 11),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            icon,
+            size: 17,
+            color: Colors.grey.shade500,
+          ),
+          const SizedBox(width: 9),
+          SizedBox(
+            width: 108,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 11.5,
+                color: Colors.grey.shade600,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(
+                fontSize: 12,
+                color: Colors.black87,
+                fontWeight: FontWeight.w700,
+                height: 1.3,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -1803,7 +2405,7 @@ class _CollectionScheduleScreenState
             ),
             const SizedBox(height: 8),
             Text(
-              'No active Kampar collection areas are currently available.',
+              'No active Kampar or Ipoh collection areas are currently available.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 13,
@@ -1870,8 +2472,8 @@ class _CollectionScheduleScreenState
                         const SizedBox(height: 6),
 
                         Text(
-                          'Check official waste collection schedules '
-                          'for supported areas in Kampar, Perak.',
+                          'Check waste collection schedules for supported areas '
+                          'in Kampar and Ipoh, Perak.',
                           style: TextStyle(
                             fontSize: 14,
                             height: 1.4,
@@ -1971,19 +2573,24 @@ class _CollectionScheduleScreenState
                                             bottom: 135,
                                           ),
                                           children: [
-                                            _buildMainCollectionCard(
-                                              _selectedArea!,
-                                              schedule,
-                                              todayEvent,
-                                            ),
-
-                                            const SizedBox(
-                                              height: 26,
-                                            ),
-
-                                            _buildWeeklyScheduleSection(
-                                              schedule,
-                                            ),
+                                            if (schedule.daysOfWeek.isEmpty)
+                                              _buildPublishedFrequencyCard(
+                                                _selectedArea!,
+                                                schedule,
+                                              )
+                                            else ...[
+                                              _buildMainCollectionCard(
+                                                _selectedArea!,
+                                                schedule,
+                                                todayEvent,
+                                              ),
+                                              const SizedBox(
+                                                height: 26,
+                                              ),
+                                              _buildWeeklyScheduleSection(
+                                                schedule,
+                                              ),
+                                            ],
 
                                             const SizedBox(
                                               height: 18,
@@ -2291,7 +2898,9 @@ class _AreaPickerSheetState
                                         height: 3,
                                       ),
                                       Text(
-                                        '${area.zoneName} • ${area.zoneArea}',
+                                        area.localAuthorityId == 'mbi_ipoh'
+                                            ? 'MBI service zone • ${area.district}, ${area.state}'
+                                            : '${area.zoneName} • ${area.zoneArea}',
                                         maxLines: 1,
                                         overflow:
                                             TextOverflow

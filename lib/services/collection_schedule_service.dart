@@ -36,21 +36,35 @@ class CollectionScheduleService {
     final areas = snapshot.docs
         .map(CollectionArea.fromDocument)
         .where((area) {
+          // Any active configured collection area in Perak is available.
+          // Currently the built-in operational datasets are Kampar and Ipoh.
           return area.isActive &&
-              area.state.toLowerCase() == 'perak' &&
-              area.district.toLowerCase() == 'kampar';
+              area.state.toLowerCase() == 'perak';
         })
         .toList();
 
-    areas.sort(
-      (a, b) => a.areaName.toLowerCase().compareTo(
+    areas.sort((a, b) {
+      final byDistrict = a.district.toLowerCase().compareTo(
+            b.district.toLowerCase(),
+          );
+
+      if (byDistrict != 0) {
+        return byDistrict;
+      }
+
+      return a.areaName.toLowerCase().compareTo(
             b.areaName.toLowerCase(),
-          ),
-    );
+          );
+    });
 
     _cachedAreas = areas;
 
     return List<CollectionArea>.from(areas);
+  }
+
+
+  void clearAreaCache() {
+    _cachedAreas = null;
   }
 
   // ============================================================
@@ -124,7 +138,30 @@ class CollectionScheduleService {
   Stream<CollectionSchedule?> watchScheduleForArea(
     CollectionArea area,
   ) {
-    return watchScheduleById(area.scheduleId);
+    final areaId = area.areaId.trim();
+
+    if (areaId.isEmpty) {
+      return Stream<CollectionSchedule?>.value(null);
+    }
+
+    // Watch the live area document first. This is important after Admin uses
+    // Sync Collection Areas: an existing screen may still hold an older
+    // CollectionArea object whose scheduleId has changed during migration.
+    // Following the live area document makes the schedule update immediately
+    // without requiring the User to restart the app.
+    return _areasCollection.doc(areaId).snapshots().asyncExpand((doc) {
+      if (!doc.exists) {
+        return Stream<CollectionSchedule?>.value(null);
+      }
+
+      final liveArea = CollectionArea.fromDocument(doc);
+
+      if (!liveArea.isActive || liveArea.scheduleId.trim().isEmpty) {
+        return Stream<CollectionSchedule?>.value(null);
+      }
+
+      return watchScheduleById(liveArea.scheduleId);
+    });
   }
 
   // ============================================================
@@ -198,11 +235,19 @@ class CollectionScheduleService {
     if (normalizedQuery.isEmpty) {
       final result = List<CollectionArea>.from(areas);
 
-      result.sort(
-        (a, b) => a.areaName.toLowerCase().compareTo(
+      result.sort((a, b) {
+        final byDistrict = a.district.toLowerCase().compareTo(
+              b.district.toLowerCase(),
+            );
+
+        if (byDistrict != 0) {
+          return byDistrict;
+        }
+
+        return a.areaName.toLowerCase().compareTo(
               b.areaName.toLowerCase(),
-            ),
-      );
+            );
+      });
 
       return result;
     }
@@ -356,7 +401,16 @@ class CollectionScheduleService {
   ) {
     int best = 0;
 
-    for (final rawName in area.searchableNames) {
+    final searchableValues = <String>{
+      ...area.searchableNames,
+      area.district,
+      area.state,
+      area.zoneName,
+      area.zoneArea,
+      area.localAuthorityName,
+    };
+
+    for (final rawName in searchableValues) {
       final name = _normalize(rawName);
 
       if (name.isEmpty) {
@@ -526,6 +580,10 @@ class CollectionScheduleService {
       'kampar',
       'daerah kampar',
       'kampar district',
+      'ipoh',
+      'kinta',
+      'daerah kinta',
+      'kinta district',
     };
 
     return genericNames.contains(value);
@@ -544,6 +602,8 @@ class CollectionScheduleService {
       'bandar',
       'daerah',
       'perak',
+      'ipoh',
+      'kinta',
       'malaysia',
       'the',
       'of',

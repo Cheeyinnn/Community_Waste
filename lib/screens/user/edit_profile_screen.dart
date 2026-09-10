@@ -36,16 +36,70 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   Future<void> _pickImage() async {
     if (_isLoading) return;
 
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Wrap(
+            children: [
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Text(
+                  'Update Profile Photo',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(
+                  Icons.photo_library_outlined,
+                  color: Colors.green,
+                ),
+                title: const Text('Choose from Gallery'),
+                onTap: () => Navigator.pop(
+                  sheetContext,
+                  ImageSource.gallery,
+                ),
+              ),
+              ListTile(
+                leading: const Icon(
+                  Icons.photo_camera_outlined,
+                  color: Colors.green,
+                ),
+                title: const Text('Take a Photo'),
+                subtitle: const Text('Open the phone camera'),
+                onTap: () => Navigator.pop(
+                  sheetContext,
+                  ImageSource.camera,
+                ),
+              ),
+              const SizedBox(height: 10),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (source == null || !mounted) return;
+
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    if (!mounted) return;
+
     final XFile? picked = await ImagePicker().pickImage(
-      source: ImageSource.gallery,
+      source: source,
       imageQuality: 70,
     );
 
-    if (picked != null) {
-      setState(() {
-        _imageFile = File(picked.path);
-      });
-    }
+    if (picked == null || !mounted) return;
+
+    setState(() {
+      _imageFile = File(picked.path);
+    });
   }
 
   Future<void> _saveProfile() async {

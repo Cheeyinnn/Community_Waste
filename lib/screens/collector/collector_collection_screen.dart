@@ -239,6 +239,45 @@ class _CollectorCollectionScreenState
       case 'kampar_zone_4':
         return 'Zone 4 • Gopeng';
 
+      case 'ipoh_zone_bercham':
+        return 'Ipoh • Bercham';
+      case 'ipoh_zone_buntong':
+        return 'Ipoh • Buntong';
+      case 'ipoh_zone_chempaka':
+        return 'Ipoh • Chempaka';
+      case 'ipoh_zone_chemor':
+        return 'Ipoh • Chemor';
+      case 'ipoh_zone_cherry':
+        return 'Ipoh • Cherry';
+      case 'ipoh_zone_gunung_rapat':
+        return 'Ipoh • Gunung Rapat';
+      case 'ipoh_zone_happy_garden':
+        return 'Ipoh • Happy Garden';
+      case 'ipoh_zone_housing_trust':
+        return 'Ipoh • Housing Trust';
+      case 'ipoh_zone_jelapang':
+        return 'Ipoh • Jelapang / Meru';
+      case 'ipoh_zone_lahat':
+        return 'Ipoh • Lahat';
+      case 'ipoh_zone_manjoi':
+        return 'Ipoh • Manjoi';
+      case 'ipoh_zone_menglembu':
+        return 'Ipoh • Menglembu';
+      case 'ipoh_zone_pasir_pinji':
+        return 'Ipoh • Pasir Pinji';
+      case 'ipoh_zone_pekan_lama_baru':
+        return 'Ipoh • Pekan Lama & Baru';
+      case 'ipoh_zone_simee_canning':
+        return 'Ipoh • Simee / Canning';
+      case 'ipoh_zone_simpang_pulai':
+        return 'Ipoh • Simpang Pulai';
+      case 'ipoh_zone_tambun':
+        return 'Ipoh • Tambun';
+      case 'ipoh_zone_tanjung_rambutan':
+        return 'Ipoh • Tanjung Rambutan';
+      case 'ipoh_zone_tasek':
+        return 'Ipoh • Tasek';
+
       default:
         return zoneId;
     }

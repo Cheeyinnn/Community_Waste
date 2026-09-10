@@ -248,6 +248,8 @@ class CollectorApplicationService {
           'collectorSuspendedAt': FieldValue.delete(),
           'collectorSuspendedBy': FieldValue.delete(),
           'collectorSuspensionReason': FieldValue.delete(),
+          'collectorReactivatedAt': FieldValue.delete(),
+          'collectorReactivatedBy': FieldValue.delete(),
           'collectorDemotedAt': FieldValue.delete(),
           'collectorDemotedBy': FieldValue.delete(),
           'collectorDemotionReason': FieldValue.delete(),
@@ -470,6 +472,11 @@ class CollectorApplicationService {
           'collectorApplicationUpdatedAt': FieldValue.serverTimestamp(),
           'collectorApprovedAt': FieldValue.serverTimestamp(),
           'collectorApprovedBy': admin.uid,
+          // A fresh approval (including a new application after demotion) is
+          // different from reactivation. Clear any older reactivation marker
+          // so the first-time approval notice is used correctly.
+          'collectorReactivatedAt': FieldValue.delete(),
+          'collectorReactivatedBy': FieldValue.delete(),
           'collectorApprovalAcknowledged': false,
           'collectorApprovalAcknowledgedAt': null,
         },
@@ -604,6 +611,16 @@ class CollectorApplicationService {
           // Keep assigned zones so reactivation does not require
           // rebuilding the Collector's zone assignment.
           'role': 'user',
+
+          // Collector suspension only removes Collector privileges.
+          // The underlying User account must stay active so this person can
+          // immediately continue using User Login.
+          'accountStatus': 'active',
+          'accountStatusUpdatedAt': FieldValue.serverTimestamp(),
+          'accountSuspensionReason': FieldValue.delete(),
+          'accountSuspendedAt': FieldValue.delete(),
+          'accountSuspendedBy': FieldValue.delete(),
+
           'collectorApplicationStatus': 'suspended',
           'collectorApplicationUpdatedAt': FieldValue.serverTimestamp(),
           'collectorSuspendedAt': FieldValue.serverTimestamp(),
@@ -674,13 +691,22 @@ class CollectorApplicationService {
         userRef,
         {
           'role': 'collector',
+          'accountStatus': 'active',
+          'accountStatusUpdatedAt': FieldValue.serverTimestamp(),
+          'accountSuspensionReason': FieldValue.delete(),
+          'accountSuspendedAt': FieldValue.delete(),
+          'accountSuspendedBy': FieldValue.delete(),
           'collectorApplicationStatus': 'approved',
           'collectorApplicationUpdatedAt': FieldValue.serverTimestamp(),
           'assignedCollectionZoneIds': zones,
           'collectorReactivatedAt': FieldValue.serverTimestamp(),
           'collectorReactivatedBy': admin.uid,
-          'collectorApprovalAcknowledged': false,
-          'collectorApprovalAcknowledgedAt': null,
+          // Do NOT reset or overwrite the approval acknowledgement here.
+          // collectorApprovalAcknowledgedAt is reused as the timestamp of the
+          // last Collector lifecycle notice the person acknowledged. Because
+          // collectorReactivatedAt is newer than that old acknowledgement,
+          // the app can show a one-time "Collector Access Reactivated"
+          // message immediately after this update.
         },
         SetOptions(merge: true),
       );
@@ -743,12 +769,19 @@ class CollectorApplicationService {
         userRef,
         {
           'role': 'user',
+          'accountStatus': 'active',
+          'accountStatusUpdatedAt': FieldValue.serverTimestamp(),
+          'accountSuspensionReason': FieldValue.delete(),
+          'accountSuspendedAt': FieldValue.delete(),
+          'accountSuspendedBy': FieldValue.delete(),
           'collectorApplicationStatus': 'demoted',
           'collectorApplicationUpdatedAt': FieldValue.serverTimestamp(),
           'assignedCollectionZoneIds': <String>[],
           'collectorDemotedAt': FieldValue.serverTimestamp(),
           'collectorDemotedBy': admin.uid,
           'collectorDemotionReason': reason.trim(),
+          'collectorReactivatedAt': FieldValue.delete(),
+          'collectorReactivatedBy': FieldValue.delete(),
           'collectorApprovalAcknowledged': false,
           'collectorApprovalAcknowledgedAt': null,
         },

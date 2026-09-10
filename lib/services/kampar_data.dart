@@ -81,12 +81,10 @@ class KamparData {
     await refreshLocationMetadata();
   }
 
-  /// Deletes only the old schedule-related documents and recreates the full
-  /// verified Kampar dataset.
-  static Future<void> resetAndSeed() async {
-    await _clearCollection('collection_areas');
-    await _clearCollection('collection_schedules');
-
+  /// Creates/updates the verified Kampar dataset without deleting data from
+  /// other Perak local authorities (for example Ipoh). This is safe to run
+  /// repeatedly from the Admin collection-data sync action.
+  static Future<void> seedOrUpdate() async {
     final batch = _db.batch();
 
     for (final schedule in _schedules) {
@@ -109,6 +107,15 @@ class KamparData {
         'endHour': 17,
         'endMinute': 0,
         'serviceType': 'Waste Collection',
+        'scheduleNote':
+            'Schedule configured from the Majlis Daerah Kampar collection '
+            'schedule dataset used by this project.',
+        'scheduleBasis': 'official_authority_schedule',
+        'officialServiceFrequency':
+            _frequencyLabelForScheduleType(schedule.scheduleType),
+        'patternVerifiedByAuthority': true,
+        'timeVerifiedByAuthority': true,
+        'exactScheduleAvailable': true,
         'isActive': true,
         'sourceUpdatedDate': _sourceUpdatedDate,
         'sourceUrl': _sourceUrls[schedule.zoneId],
@@ -145,9 +152,21 @@ class KamparData {
     await batch.commit();
   }
 
-  static Future<void> _clearCollection(String collectionName) async {
+  /// Recreates only Majlis Daerah Kampar documents. Ipoh and any future
+  /// authority datasets are preserved.
+  static Future<void> resetAndSeed() async {
+    await _clearAuthorityCollection('collection_areas');
+    await _clearAuthorityCollection('collection_schedules');
+    await seedOrUpdate();
+  }
+
+  static Future<void> _clearAuthorityCollection(String collectionName) async {
     while (true) {
-      final snapshot = await _db.collection(collectionName).limit(400).get();
+      final snapshot = await _db
+          .collection(collectionName)
+          .where('localAuthorityId', isEqualTo: _localAuthorityId)
+          .limit(400)
+          .get();
 
       if (snapshot.docs.isEmpty) {
         return;
@@ -158,6 +177,19 @@ class KamparData {
         batch.delete(doc.reference);
       }
       await batch.commit();
+    }
+  }
+
+  static String _frequencyLabelForScheduleType(String scheduleType) {
+    switch (scheduleType.toLowerCase()) {
+      case 'daily':
+        return 'Daily';
+      case 'mwf':
+        return '3 times weekly - Monday, Wednesday & Friday';
+      case 'tts':
+        return '3 times weekly - Tuesday, Thursday & Saturday';
+      default:
+        return scheduleType;
     }
   }
 

@@ -164,10 +164,25 @@ class _StartupGateState extends State<StartupGate> {
             .toLowerCase() ??
         'active';
 
+    final startupCollectorStatus =
+        userData['collectorApplicationStatus']
+                ?.toString()
+                .trim()
+                .toLowerCase() ??
+            '';
+
+    // Collector suspension is NOT a full User-account suspension.
+    // During Collector suspension the account is deliberately downgraded to
+    // role=user and must continue to work through User Login.  The Collector
+    // status is checked here as well so older test data with a stale
+    // accountStatus='suspended' cannot incorrectly block normal User access.
+    final startupCollectorOnlySuspension =
+        startupRole == 'user' && startupCollectorStatus == 'suspended';
+
     if (accountStatus == 'suspended' &&
-        startupRole != 'admin') {
-      // A suspended User must not be restored automatically from an
-      // old Firebase session. Sign out and return to LoginScreen.
+        startupRole != 'admin' &&
+        !startupCollectorOnlySuspension) {
+      // Only a true normal-User account suspension blocks the whole app.
       await _authService.logout();
 
       return const _StartupResult(
@@ -284,6 +299,11 @@ class _StartupGateState extends State<StartupGate> {
                 'collectorApprovalAcknowledged'] ==
             true;
 
+    final reactivatedAt =
+        userData['collectorReactivatedAt'] is Timestamp
+            ? userData['collectorReactivatedAt'] as Timestamp
+            : null;
+
     final bool currentApprovalAcknowledged;
 
     if (!acknowledgedFlag) {
@@ -303,6 +323,29 @@ class _StartupGateState extends State<StartupGate> {
 
     final isApprovedCollector =
         applicationStatus == 'approved';
+
+    final reactivationNoticePending =
+        isApprovedCollector &&
+        reactivatedAt != null &&
+        (acknowledgedAt == null ||
+            acknowledgedAt
+                .toDate()
+                .isBefore(reactivatedAt.toDate()));
+
+    // ----------------------------------------------------------
+    // REACTIVATED COLLECTOR
+    //
+    // Do not reuse the first-time application approval dialog here.
+    // CollectorMainScreen has a real-time Firestore gate that shows the
+    // one-time "Collector Access Reactivated" message and records the
+    // acknowledgement. This branch must come before first approval logic.
+    // ----------------------------------------------------------
+
+    if (reactivationNoticePending) {
+      return const _StartupResult(
+        screen: CollectorMainScreen(),
+      );
+    }
 
     // ----------------------------------------------------------
     // NEWLY APPROVED COLLECTOR

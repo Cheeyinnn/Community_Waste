@@ -235,6 +235,9 @@ class _ReportChatScreenState extends State<ReportChatScreen> {
   Future<void> _pickAndSendImage(ImageSource source) async {
     if (_isSending) return;
 
+    // The attachment bottom sheet is fully dismissed before this method is
+    // called. This prevents the native image picker from opening while the
+    // sheet is still being removed from Flutter's widget tree.
     final picked = await _imagePicker.pickImage(
       source: source,
       imageQuality: 75,
@@ -246,76 +249,30 @@ class _ReportChatScreenState extends State<ReportChatScreen> {
     }
 
     final file = File(picked.path);
-    final captionController = TextEditingController();
 
-    final shouldSend = await showDialog<bool>(
+    // Keep the caption controller inside the dialog widget itself. The dialog
+    // owns and disposes it at the correct lifecycle point instead of disposing
+    // a controller immediately after Navigator.pop(), while the dialog may
+    // still be completing its reverse transition.
+    final result = await showDialog<_ImageSendResult>(
       context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(22),
-          ),
-          title: const Text(
-            'Send Photo',
-            style: TextStyle(fontWeight: FontWeight.w800),
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
-                  child: AspectRatio(
-                    aspectRatio: 4 / 3,
-                    child: Image.file(
-                      file,
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                TextField(
-                  controller: captionController,
-                  maxLines: 3,
-                  maxLength: 1000,
-                  decoration: InputDecoration(
-                    hintText: 'Add a caption (optional)',
-                    filled: true,
-                    fillColor: Colors.grey.shade50,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide.none,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton.icon(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              style: FilledButton.styleFrom(
-                backgroundColor: _rolePrimary,
-                foregroundColor: Colors.white,
-              ),
-              icon: const Icon(Icons.send_rounded, size: 18),
-              label: const Text('Send'),
-            ),
-          ],
+      barrierDismissible: false,
+      builder: (_) {
+        return _ImageSendDialog(
+          imageFile: file,
+          primaryColor: _rolePrimary,
         );
       },
     );
 
-    final caption = captionController.text.trim();
-    captionController.dispose();
-
-    if (shouldSend != true || !mounted) {
+    if (result == null || !mounted) {
       return;
     }
+
+    // Give the dialog route one frame to finish detaching before rebuilding
+    // the parent chat screen and starting the Firebase upload.
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    if (!mounted) return;
 
     setState(() {
       _isSending = true;
@@ -325,7 +282,7 @@ class _ReportChatScreenState extends State<ReportChatScreen> {
       await _chatService.sendImage(
         reportId: widget.reportId,
         imageFile: file,
-        caption: caption,
+        caption: result.caption,
         channel: widget.channel,
       );
     } catch (e) {
@@ -421,7 +378,11 @@ class _ReportChatScreenState extends State<ReportChatScreen> {
   Future<void> _showAttachmentOptions() async {
     FocusScope.of(context).unfocus();
 
-    await showModalBottomSheet<void>(
+    // Only return the selected action from the bottom sheet. Do not start the
+    // image picker or another dialog from inside the sheet's onTap callback.
+    // Starting a new route/native picker while this route is being disposed can
+    // trigger Flutter's "_dependents.isEmpty" framework assertion.
+    final action = await showModalBottomSheet<_AttachmentAction>(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (sheetContext) {
@@ -458,28 +419,28 @@ class _ReportChatScreenState extends State<ReportChatScreen> {
                   icon: Icons.photo_library_outlined,
                   title: 'Photo from Gallery',
                   subtitle: 'Send a photo to clarify the report.',
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    _pickAndSendImage(ImageSource.gallery);
-                  },
+                  onTap: () => Navigator.pop(
+                    sheetContext,
+                    _AttachmentAction.gallery,
+                  ),
                 ),
                 _buildAttachmentTile(
                   icon: Icons.photo_camera_outlined,
                   title: 'Take Photo',
                   subtitle: 'Take and send a new photo.',
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    _pickAndSendImage(ImageSource.camera);
-                  },
+                  onTap: () => Navigator.pop(
+                    sheetContext,
+                    _AttachmentAction.camera,
+                  ),
                 ),
                 _buildAttachmentTile(
                   icon: Icons.location_on_outlined,
                   title: 'Report Location',
                   subtitle: 'Share the saved location for this report.',
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    _shareReportLocation();
-                  },
+                  onTap: () => Navigator.pop(
+                    sheetContext,
+                    _AttachmentAction.location,
+                  ),
                 ),
               ],
             ),
@@ -487,6 +448,25 @@ class _ReportChatScreenState extends State<ReportChatScreen> {
         );
       },
     );
+
+    if (action == null || !mounted) return;
+
+    // Wait for the bottom-sheet reverse transition to detach its inherited
+    // dependencies before launching the next UI flow.
+    await Future<void>.delayed(const Duration(milliseconds: 180));
+    if (!mounted) return;
+
+    switch (action) {
+      case _AttachmentAction.gallery:
+        await _pickAndSendImage(ImageSource.gallery);
+        break;
+      case _AttachmentAction.camera:
+        await _pickAndSendImage(ImageSource.camera);
+        break;
+      case _AttachmentAction.location:
+        await _shareReportLocation();
+        break;
+    }
   }
 
   Widget _buildAttachmentTile({
@@ -1391,6 +1371,143 @@ class _ReportChatScreenState extends State<ReportChatScreen> {
                     ),
         );
       },
+    );
+  }
+}
+
+enum _AttachmentAction { gallery, camera, location }
+
+class _ImageSendResult {
+  final String caption;
+
+  const _ImageSendResult({required this.caption});
+}
+
+class _ImageSendDialog extends StatefulWidget {
+  final File imageFile;
+  final Color primaryColor;
+
+  const _ImageSendDialog({
+    required this.imageFile,
+    required this.primaryColor,
+  });
+
+  @override
+  State<_ImageSendDialog> createState() => _ImageSendDialogState();
+}
+
+class _ImageSendDialogState extends State<_ImageSendDialog> {
+  late final TextEditingController _captionController;
+  bool _closing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _captionController = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _captionController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _close({required bool send}) async {
+    if (_closing) return;
+
+    setState(() {
+      _closing = true;
+    });
+
+    FocusScope.of(context).unfocus();
+
+    // Allow EditableText/keyboard dependencies to detach before this dialog
+    // route starts its reverse transition.
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    if (!mounted) return;
+
+    if (!send) {
+      Navigator.of(context).pop();
+      return;
+    }
+
+    Navigator.of(context).pop(
+      _ImageSendResult(
+        caption: _captionController.text.trim(),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: !_closing,
+      child: AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(22),
+        ),
+        title: const Text(
+          'Send Photo',
+          style: TextStyle(fontWeight: FontWeight.w800),
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: AspectRatio(
+                  aspectRatio: 4 / 3,
+                  child: Image.file(
+                    widget.imageFile,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: _captionController,
+                enabled: !_closing,
+                maxLines: 3,
+                maxLength: 1000,
+                decoration: InputDecoration(
+                  hintText: 'Add a caption (optional)',
+                  filled: true,
+                  fillColor: Colors.grey.shade50,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: _closing ? null : () => _close(send: false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            onPressed: _closing ? null : () => _close(send: true),
+            style: FilledButton.styleFrom(
+              backgroundColor: widget.primaryColor,
+              foregroundColor: Colors.white,
+            ),
+            icon: _closing
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.send_rounded, size: 18),
+            label: Text(_closing ? 'Closing...' : 'Send'),
+          ),
+        ],
+      ),
     );
   }
 }

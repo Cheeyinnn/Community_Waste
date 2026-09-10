@@ -4,6 +4,7 @@ import 'package:fl_chart/fl_chart.dart';
 
 import '../../models/waste_report.dart';
 import '../../services/firestore_service.dart';
+import '../../services/perak_collection_data.dart';
 import '../../services/auth_service.dart';
 import '../auth/login_screen.dart';
 import '../auth/profile_page.dart';
@@ -73,6 +74,78 @@ class AdminDashboardScreen extends StatelessWidget {
       ),
       (route) => false,
     );
+  }
+
+  Future<void> _syncCollectionData(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(22),
+          ),
+          title: const Text(
+            'Sync Collection Areas?',
+            style: TextStyle(fontWeight: FontWeight.w800),
+          ),
+          content: const Text(
+            'This will create or update the built-in Kampar and Ipoh '
+            'collection-zone data. Existing reports, users and collector '
+            'assignments will not be deleted.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              icon: const Icon(Icons.sync_rounded),
+              label: const Text('Sync'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true || !context.mounted) {
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Syncing Kampar and Ipoh collection areas...'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+
+    try {
+      await PerakCollectionData.sync();
+
+      if (!context.mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Collection areas synced successfully. Kampar and Ipoh are ready.',
+          ),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Unable to sync collection areas: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   Future<void> _openAccountMenu(BuildContext context) async {
@@ -205,6 +278,22 @@ class AdminDashboardScreen extends StatelessWidget {
                       builder: (_) => const ProfilePage(),
                     ),
                   );
+                },
+              ),
+              const SizedBox(height: 10),
+              _buildAccountMenuTile(
+                icon: Icons.sync_rounded,
+                iconColor: Colors.blue,
+                title: 'Sync Collection Areas',
+                subtitle: 'Update built-in Kampar and Ipoh zone data',
+                onTap: () {
+                  Navigator.pop(sheetContext);
+
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (context.mounted) {
+                      _syncCollectionData(context);
+                    }
+                  });
                 },
               ),
               const SizedBox(height: 10),

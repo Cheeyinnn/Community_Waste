@@ -129,7 +129,46 @@ class _LoginScreenState extends State<LoginScreen> {
                   .toLowerCase() ??
               'active';
 
-      if (accountStatus == 'suspended' && role != 'admin') {
+      final applicationStatus =
+          userData['collectorApplicationStatus']
+                  ?.toString()
+                  .trim()
+                  .toLowerCase() ??
+              '';
+
+      final collectorReactivatedAt =
+          userData['collectorReactivatedAt'] is Timestamp
+              ? userData['collectorReactivatedAt'] as Timestamp
+              : null;
+
+      final collectorAcknowledgedAt =
+          userData['collectorApprovalAcknowledgedAt'] is Timestamp
+              ? userData['collectorApprovalAcknowledgedAt'] as Timestamp
+              : null;
+
+      final reactivationNoticePending =
+          role == 'collector' &&
+          applicationStatus == 'approved' &&
+          collectorReactivatedAt != null &&
+          (collectorAcknowledgedAt == null ||
+              collectorAcknowledgedAt
+                  .toDate()
+                  .isBefore(collectorReactivatedAt.toDate()));
+
+      // IMPORTANT:
+      // "accountStatus = suspended" means the whole User account is blocked.
+      // "collectorApplicationStatus = suspended" only means Collector access
+      // is paused. A suspended Collector is intentionally downgraded to role
+      // "user" and MUST still be able to enter through User Login.
+      //
+      // The second condition also safely handles any stale accountStatus value
+      // left by older development data before this lifecycle was separated.
+      final isCollectorOnlySuspension =
+          role == 'user' && applicationStatus == 'suspended';
+
+      if (accountStatus == 'suspended' &&
+          role != 'admin' &&
+          !isCollectorOnlySuspension) {
         final reason =
             userData['accountSuspensionReason']?.toString().trim() ?? '';
 
@@ -142,6 +181,52 @@ class _LoginScreenState extends State<LoginScreen> {
       }
 
       final selectedRole = _selectedRoleValue;
+
+      // ==========================================================
+      // COLLECTOR REACTIVATION NOTICE
+      //
+      // This must be checked BEFORE normal role routing. A suspended
+      // Collector may still try User Login because that was the correct
+      // login while suspended. After Admin reactivation, show a distinct
+      // reactivation message once, then continue as Collector.
+      // ==========================================================
+
+      if (reactivationNoticePending) {
+        final rawZones = userData['assignedCollectionZoneIds'];
+
+        final assignedZones = rawZones is Iterable
+            ? rawZones
+                .map((item) => item.toString().trim())
+                .where((item) => item.isNotEmpty)
+                .toList()
+            : <String>[];
+
+        final continueAsCollector =
+            await _showCollectorReactivationDialog(
+          assignedZones: assignedZones,
+        );
+
+        if (!mounted) return;
+
+        if (continueAsCollector == true) {
+          await userRef.set(
+            {
+              'collectorApprovalAcknowledged': true,
+              'collectorApprovalAcknowledgedAt':
+                  FieldValue.serverTimestamp(),
+            },
+            SetOptions(merge: true),
+          );
+
+          if (!mounted) return;
+
+          _navigateToRole('collector');
+          return;
+        }
+
+        await _authService.logout();
+        return;
+      }
 
       // Correct login tab -> enter normally.
       if (selectedRole == role) {
@@ -163,13 +248,6 @@ class _LoginScreenState extends State<LoginScreen> {
       // Future attempts:
       //   User Login -> blocked -> switch to Collector Login
       // ==========================================================
-
-      final applicationStatus =
-          userData['collectorApplicationStatus']
-                  ?.toString()
-                  .trim()
-                  .toLowerCase() ??
-              '';
 
       final approvalAcknowledged =
           userData['collectorApprovalAcknowledged'] == true;
@@ -506,6 +584,114 @@ class _LoginScreenState extends State<LoginScreen> {
               child: const Text(
                 'Continue as Collector',
               ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // ============================================================
+  // COLLECTOR REACTIVATED MESSAGE
+  // ============================================================
+
+  Future<bool?> _showCollectorReactivationDialog({
+    required List<String> assignedZones,
+  }) {
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          title: const Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.restart_alt_rounded,
+                color: Color(0xFFFFB547),
+                size: 30,
+              ),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Collector Access Reactivated',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Your Collector access has been restored by the administrator. '
+                  'You can now continue using the Collector system.',
+                  style: TextStyle(
+                    fontSize: 14,
+                    height: 1.45,
+                    color: Colors.grey.shade700,
+                  ),
+                ),
+                if (assignedZones.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFB547).withOpacity(0.10),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Assigned Collection Zone(s)',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 7),
+                        ...assignedZones.map(
+                          (zoneId) => Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: Text(
+                              _zoneDisplayName(zoneId),
+                              style: const TextStyle(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Back to Login'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFFFB547),
+                foregroundColor: Colors.white,
+                elevation: 0,
+              ),
+              child: const Text('Continue as Collector'),
             ),
           ],
         );

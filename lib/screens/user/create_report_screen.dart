@@ -428,12 +428,12 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
         imageQuality: 70,
       );
 
-      if (picked != null) {
-        setState(() {
-          _imageFile = File(picked.path);
-          _aiSuggestion = null;
-        });
-      }
+      if (picked == null || !mounted) return;
+
+      setState(() {
+        _imageFile = File(picked.path);
+        _aiSuggestion = null;
+      });
     } catch (e) {
       if (!mounted) return;
 
@@ -443,13 +443,13 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     }
   }
 
-  void _showImageSourceOptions() {
-    showModalBottomSheet(
+  Future<void> _showImageSourceOptions() async {
+    final source = await showModalBottomSheet<ImageSource>(
       context: context,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (context) => SafeArea(
+      builder: (sheetContext) => SafeArea(
         child: Wrap(
           children: [
             const Padding(
@@ -462,24 +462,35 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
             ListTile(
               leading: const Icon(Icons.photo_library, color: Colors.green),
               title: const Text('Choose from Gallery'),
-              onTap: () {
-                Navigator.pop(context);
-                _pickImage(ImageSource.gallery);
-              },
+              onTap: () => Navigator.pop(
+                sheetContext,
+                ImageSource.gallery,
+              ),
             ),
             ListTile(
               leading: const Icon(Icons.camera_alt, color: Colors.green),
               title: const Text('Take a Photo'),
-              onTap: () {
-                Navigator.pop(context);
-                _pickImage(ImageSource.camera);
-              },
+              subtitle: const Text('Open the phone camera'),
+              onTap: () => Navigator.pop(
+                sheetContext,
+                ImageSource.camera,
+              ),
             ),
             const SizedBox(height: 10),
           ],
         ),
       ),
     );
+
+    if (source == null || !mounted) return;
+
+    // Let the source sheet fully close before launching Gallery/Camera.
+    // This avoids starting a native picker while Flutter is disposing the
+    // bottom-sheet route.
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    if (!mounted) return;
+
+    await _pickImage(source);
   }
 
   // ============================================================
